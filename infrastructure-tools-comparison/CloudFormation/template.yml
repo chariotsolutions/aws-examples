@@ -1,0 +1,100 @@
+##
+## Template to create a set of users, assign them to groups, and grant those groups
+## permission to assume roles in associated accounts. 
+##
+
+AWSTemplateFormatVersion:           "2010-09-09"
+Description:                        "Defines users, groups, and group permissions"
+
+Parameters:
+
+  DevAccountId:
+    Description:                    "Symbolic name for the development account ID"
+    Type:                           "String"
+    Default:                        "123456789012"
+
+  ProdAccountId:
+    Description:                    "Symbolic name for the development account ID"
+    Type:                           "String"
+    Default:                        "234567890123"
+
+
+Resources:
+
+##
+## Users
+##
+
+  User1:
+    Type:                           "AWS::IAM::User"
+    Properties: 
+      UserName:                     "user1"
+      ManagedPolicyArns:            [ !Sub "arn:aws:iam::${AWS::AccountId}:policy/BasicUserPolicy" ]
+      Groups:
+       -                            !Ref Group1
+       -                            !Ref Group2
+
+  User2:
+    Type:                           "AWS::IAM::User"
+    Properties: 
+      UserName:                     "user2"
+      ManagedPolicyArns:            [ !Sub "arn:aws:iam::${AWS::AccountId}:policy/BasicUserPolicy" ]
+      Groups:
+       -                            !Ref Group1
+
+  User3:
+    Type:                           "AWS::IAM::User"
+    Properties: 
+      UserName:                     "user3"
+      ManagedPolicyArns:            [ !Sub "arn:aws:iam::${AWS::AccountId}:policy/BasicUserPolicy" ]
+      Groups:
+       -                            !Ref Group2
+
+##
+## Groups
+##
+
+  Group1:
+    Type:                           "AWS::IAM::Group"
+    Properties: 
+      GroupName:                    "group1"
+
+  Group2:
+    Type:                           "AWS::IAM::Group"
+    Properties: 
+      GroupName:                    "group2"
+
+
+##
+## Group/permissions assignment
+##
+
+  Group1Policy:
+    Type:                           "AWS::IAM::Policy"
+    Properties:
+      Groups:                       [ !Ref Group1 ]
+      PolicyName:                   "Group1-AssumeRole"
+      PolicyDocument:
+        Version:                    "2012-10-17"
+        Statement:
+          -
+            Effect:                 "Allow"
+            Action:                 [ "sts:AssumeRole" ]
+            Resource:
+             -                      !Sub "arn:aws:iam::${DevAccountId}:role/FooAppDeveloperRole"
+             -                      !Sub "arn:aws:iam::${ProdAccountId}:role/FooAppReadOnlyRole"
+
+  Group2Policy:
+    Type:                           "AWS::IAM::Policy"
+    Properties:
+      Groups:                       [ !Ref Group2 ]
+      PolicyName:                   "Group2-AssumeRole"
+      PolicyDocument:
+        Version:                    "2012-10-17"
+        Statement:
+          -
+            Effect:                 "Allow"
+            Action:                 [ "sts:AssumeRole" ]
+            Resource:
+             -                      !Sub "arn:aws:iam::${DevAccountId}:role/BarAppDeveloperRole"
+             -                      !Sub "arn:aws:iam::${ProdAccountId}:role/BarAppReadOnlyRole"
