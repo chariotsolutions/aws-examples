@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates an Elasticsearch cluster and a Lambda function that will write CloudTrail events into it"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "CloudTrail_to_Elasticsearch"
+
+  CloudTrailBucket:
+    Description:                        "The S3 bucket that holds CloudTrail events"
+    Type:                               "String"
+    Default:                            ""
+
+  CloudTrailKey:
+    Description:                        "The path in that bucket for new CloudTrail event files, with trailing slash"
+    Type:                               "String"
+    Default:                            "cloudtrail/"
+
+  ElasticsearchDomainName:
+    Description:                        "Name for the Elasticsearch cluster (must be DNS-legal)"
+    Type:                               "String"
+    Default:                            "cloudtrail-events"
+
+  ElasticsearchInstanceType:
+    Description:                        "Type of instance used for Elasticsearch cluster; default is useful for small environment"
+    Type:                               "String"
+    Default:                            "t2.medium.elasticsearch"
+
+  ElasticsearchStorageSize:
+    Description:                        "Size of the Elasticsearch storage volume, in GB"
+    Type:                               "Number"
+    Default:                            32
+
+  AllowedIPs:
+    Description:                        "IP addresses that are allowed to access Elasticsearch/Kibana (leave blank for none)"
+    Type:                               "CommaDelimitedList"
+    Default:                            ""
+
+
+Resources:
+
+  ##
+  ## Elasticsearch cluster
+  ##
+
+  ElasticSearchDomain:
+    Type:                               "AWS::Elasticsearch::Domain"
+    Properties:
+      DomainName:                       !Ref ElasticsearchDomainName
+      ElasticsearchVersion:             "6.8"
+      ElasticsearchClusterConfig:
+        InstanceType:                   !Ref ElasticsearchInstanceType
+        InstanceCount:                  1
+        DedicatedMasterEnabled:         false
+        ZoneAwarenessEnabled:           false
+      EBSOptions:
+        EBSEnabled:                     true
+        VolumeType:                     "gp2"
+        VolumeSize:                     !Ref ElasticsearchStorageSize
+      SnapshotOptions:
+        AutomatedSnapshotStartHour:     8
+      AdvancedOptions:                  {
+                                        "rest.action.multi.allow_explicit_index": "true"
+                                        }
+      AccessPolicies:
+        Version:                        "2012-10-17"
+        Statement:
+          -
+            Effect:                     "Allow"
+            Principal:                  { "AWS": !Sub "${AWS::AccountId}" }
+            Action:                     "es:*"
+            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${ElasticsearchDomainName}/*"
+          -
+            Effect:                     "Allow"
+            Principal:                  { "AWS": "*" }
+            Action:                     "es:*"
+            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${ElasticsearchDomainName}/*"
+            Condition:
+              IpAddress:
+                aws:SourceIp:           !Ref AllowedIPs
+
+  ##
+  ## Lambda Function
+  ##
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        -
+          PolicyName:                   "ReadFromSource"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:GetObject"
+              Resource:                 [ !Sub "arn:aws:s3:::${CloudTrailBucket}/${CloudTrailKey}*" ]
+        -
+          PolicyName:                   "WriteToDestination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:                   [ "es:ESHttpPost" ]
+              Resource:                 [ !Sub "${ElasticSearchDomain.Arn}/*" ]
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Reacts to CloudTrail files being stored on S3 by uploading them to Elasticsearch"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        def lambda_handler(event, context):
+                                            print("this is a dummy handler; please build and upload real handler")
+      MemorySize:                       256
+      Timeout:                          60
+      Environment: 
+        Variables:
+          ES_HOSTNAME:                  !GetAtt ElasticSearchDomain.DomainEndpoint
