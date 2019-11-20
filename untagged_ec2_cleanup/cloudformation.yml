@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates a Lambda function that will find forgotten EC2 instances"
+
+Parameters:
+
+  FunctionName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "EC2InstanceCleanup"
+
+  Accounts:
+    Description:                        "A comma-delimited list of account numbers that will be examined"
+    Type:                               "String"
+    Default:                            ""
+
+  Regions:
+    Description:                        "A comma-delimited list of the regions that will be examined for each account"
+    Type:                               "String"
+    Default:                            "us-east-1,us-east-2,us-west-1,us-west-2"
+
+  RoleName:
+    Description:                        "A role that is present in each account and has the ability to inspect/terminate EC2 instances"
+    Type:                               "String"
+    Default:                            "OrganizationAccountAccessRole"
+
+  Schedule:
+    Description:                        "A schedule specification for the Lambda trigger"
+    Type:                               "String"
+    Default:                            "cron(0 4 * * ? *)"
+
+
+Resources:
+
+  Trigger:
+    Type:                               "AWS::Events::Rule"
+    Properties: 
+      Name:                             !Sub "${FunctionName}-TriggerRole"
+      Description:                      "Scheduled event to trigger the EC2 cleanup lambda"
+      State:                            "DISABLED"
+      ScheduleExpression:               !Ref Schedule
+      Targets:
+        -
+          Id:                           "EC2-Cleanup"
+          Arn:                          !GetAtt LambdaFunction.Arn
+
+
+  Permission:
+    Type:                               "AWS::Lambda::Permission"
+    Properties: 
+      FunctionName:                     !Ref LambdaFunction
+      Action:                           "lambda:InvokeFunction"
+      Principal:                        "events.amazonaws.com"
+      SourceArn:                        !GetAtt Trigger.Arn
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${FunctionName}-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        -
+          PolicyName:                   "AssumeRole"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "sts:AssumeRole"
+              Resource:                 [ !Sub "arn:aws:iam::*:role/${RoleName}" ]
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Ref FunctionName
+      Description:                      "Examines managed accounts to find forgotten EC2 instances"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      MemorySize:                       256
+      Timeout:                          60
+      Environment: 
+        Variables:
+          ACCOUNTS:                     !Ref Accounts
+          REGIONS:                      !Ref Regions
+          ROLE_NAME:                    !Ref RoleName
+      Code: 
+        ZipFile:                        |
+                                        import boto3
+                                        import os
+                                        import uuid
+                                        
+                                        from datetime import datetime, timedelta
+                                        
+                                        DEFAULT_GRACE_PERIOD = timedelta(days=7)
+                                        
+                                        
+                                        def lambda_handler(event, context):
+                                            if not os.environ.get('ACCOUNTS'):
+                                                print('must specify at least one account')
+                                                return
+                                            if not os.environ.get('ROLE_NAME'):
+                                                print('must specify an assumed role')
+                                                return
+                                            accounts = os.environ.get('ACCOUNTS', '').split(',')
+                                            regions  = os.environ.get('REGIONS', '').split(',')
+                                            roleName = os.environ.get('ROLE_NAME', '')
+                                            for account in accounts:
+                                                for region in regions:
+                                                    examine_ec2_instances(account.strip(), region.strip(), roleName.strip())
+                                        
+                                        
+                                        def examine_ec2_instances(account, region, roleName):
+                                            print(f'examining instances in account {account}, region {region}')
+                                            client = create_client_with_role('ec2', account, region, roleName)
+                                            for instance in client.instances.all():
+                                                examine_ec2_instance(instance)
+                                        
+                                        
+                                        def examine_ec2_instance(instance):
+                                            instanceName = get_tag_value(instance, 'Name')
+                                            createdBy    = get_tag_value(instance, 'CreatedBy')
+                                            deleteAfter  = get_tag_value(instance, 'DeleteAfter')
+                                            if not deleteAfter:
+                                                deleteAfter = (instance.launch_time + DEFAULT_GRACE_PERIOD).isoformat()
+                                            if instanceName and createdBy and (deleteAfter < datetime.now().date().isoformat()):
+                                                return
+                                            asg = get_tag_value(instance, 'aws:autoscaling:groupName')
+                                            if asg:
+                                                print(f'    instance {instance.id} would be deleted, but is controlled by auto-scaling group "{asg}"')
+                                                return
+                                            print(f'    deleting instance {instance.id}: instanceName = "{instanceName}", createdBy = "{createdBy}", deleteAfter = "{deleteAfter}"')
+                                            # instance.terminate()
+                                        
+                                        
+                                        def create_client_with_role(service, account, region, roleName, lowLevel=False):
+                                            """ A function for creating boto3 clients that access resources via assumed roles.
+                                                
+                                                The account and rolename must both be specified, to avoid unfortunate accidents
+                                                in the invoking account. This function 
+
+                                                A more generic version is here: https://github.com/kdgregory/aws-misc/blob/master/snippets/python.md
+                                            """
+                                            roleArn = f'arn:aws:iam::{account}:role/{roleName}'
+                                            sessionName = (os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'Interactive')
+                                                            + "-" + str(int(datetime.now().timestamp())))
+                                            response = boto3.client('sts').assume_role(RoleArn=roleArn, RoleSessionName=sessionName)
+                                            kwargs = {}
+                                            kwargs['aws_access_key_id'] = response['Credentials']['AccessKeyId']
+                                            kwargs['aws_secret_access_key'] = response['Credentials']['SecretAccessKey']
+                                            kwargs['aws_session_token'] = response['Credentials']['SessionToken']
+                                            kwargs['region_name'] = region
+                                            if lowLevel:
+                                                return boto3.client(service, **kwargs)
+                                            else:
+                                                return boto3.resource(service, **kwargs)
+                                        
+                                        
+                                        def get_tag_value(instance, tagKey):
+                                            for tag in instance.tags:
+                                                if tag['Key'] == tagKey:
+                                                    return tag['Value']
+                                            return None
+
