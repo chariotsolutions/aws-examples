@@ -1,0 +1,10 @@
+*.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# for example code we'll expect this to be regenerated
+package-lock.json

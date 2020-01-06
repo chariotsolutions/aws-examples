@@ -1,33 +1,46 @@
-This project compares CloudFormation, Terraform, CFNDSL, and CDK as tools for managing users,
-groups, and roles. Each variant is in its own sub-directory, and creates the following resources:
+This project is a companion for [a blog post](https://chariotsolutions.com/blog/post/comparing-infrastructure-tools-a-first-look-at-the-aws-cloud-development-kit/)
+comparing various infrastructure management tools for AWS. As an example, it creates a set of
+users, groups, and roles as describe in [this blog post](https://chariotsolutions.com/blog/post/managing-aws-users-and-roles-in-a-multi-account-organization/).
+
+The four tools that I compare are:
+
+* [CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html), the AWS standard for declarative infrastructure.
+* [CFNDSL](https://www.rubydoc.info/gems/cfndsl), a Ruby gem that allows generating CloudFormation templates programmatically.
+* [CDK](https://docs.aws.amazon.com/cdk/latest/guide/home.html), an AWS-supported open-source project for generating and deploying CloudFormation templates.
+* [Terraform](https://www.terraform.io/), the leading non-AWS contender for managing infrastructure declaratively.
+
+
+## General Notes
+
+To run, you must have the ability to create users, groups, and policies (essentially, admin-level
+rights).  I strongly recommend running in a "sandbox" account so that you won't interfere with
+operational users/groups.
+
+Each variant lives in its own sub-directory, so that it can create artifacts without interfering
+with the others (this is particularly important for Terraform and CDK). Each variant has a README
+that describes how to run it:
+
+* [CloudFormation](CloudFormation/README.md)
+* [CFNDSL](CFNDSL/README.md)
+* [CDK](CDK/README.md)
+* [Terraform](Terraform/README.md)
+
+
+## Resources Created
+
+Each variant of this project creates the following resources:
 
 * Three users: `user1`, `user2`, and `user3`.
 * Two groups: `group` and `group2`, which have permissions to assume specific roles.
 
-The assumable roles aren't defined by this example. I use names such as `FooAppDeveloperRole` and
-`FooAppReadOnlyRole` to represent the sorts of user-assumable roles that would allow management
-of an application Foo in the developer account, but read-only access in the production account.
+It does _not_ create the various IAM roles referenced by the group policies, as that's beyond
+the scope of the example (and the roles don't need to exist to be referenced).
 
+It also does _not_ create a managed policy named `BasicUserPolicy`, even though that policy
+must exist for the users to be successfully created. For demonstration purposes, you can
+create a policy with no permissions. If you'd like to use a real policy, here's the one we
+use for our sandbox accounts:
 
-# General Notes
-
-To run, you must have the ability to create users, groups, and policies (essentially, admin-level
-rights).  I recommend running in a "sandbox" account so that you won't interfere with operational
-users/groups.
-
-Each variant lives in its own sub-directory, so that it can create artifacts without interfering
-with the others (this is particularly important for Terraform and CDK). The instructions below
-assume that you're running from the relevant directory.
-
-
-# BasicUserPolicy
-
-All of the scripts expect an existing managed policy named `BasicUserPolicy`, which will be assigned
-to each created user.
-
-Here is the policy that we use in our sandbox account; it allows users to retrieve information about
-themselves, change their own passwords, assign a virtual MFA device, and manage the keys that they
-use to interact with AWS services.
 
 ```
 {
@@ -67,109 +80,4 @@ use to interact with AWS services.
         }
     ]
 }
-```
-
-
-# CloudFormation
-
-I prefer to use the AWS Console for CloudFormation, because (1) it's easier to enter parameters,
-and (2) when you're updating a stack you can see the changes that will happen before clicking OK.
-However, if you want to use the CLI, here are the commands (replace `UserCreationExample` with
-whatever stack name you want to use):
-
-```
-aws cloudformation create-stack --stack-name UserCreationExample --capabilities CAPABILITY_NAMED_IAM --template-body file://template.yml
-```
-
-And to delete the stack:
-
-```
-aws cloudformation delete-stack --stack-name UserCreationExample
-```
-
-
-# Terraform
-
-Creating the resources is a two-step process:
-
-```
-terraform init
-```
-
-Which will download the AWS provider, and
-
-
-```
-terraform apply
-```
-
-Which performs the infrastructure changes. You will have to manually approve making this changes.
-
-It may turn into a three-step process: sometimes the users or groups aren't ready to have roles applied,
-and you see an error about the resource not existing. Running `terraform apply` a second time resolves
-this.
-
-To destroy the resources:
-
-```
-terraform destroy
-```
-
-Note that the `.gitignore` file explicitly excludes the `tfstate` files. This is not something that
-you'd want to do in a real deployment; those files should be checked-in alongside the template.
-
-
-# CFNDSL
-
-You first need to install CFNDSL per the instructions [here](https://www.rubydoc.info/gems/cfndsl)
-(and you may also need to install a compatible Ruby version as well).
-
-Then, generate the template using this command:
-
-```
-cfndsl --disable-binding -f yaml script.rb > template.yml
-```
-
-* `--disable-binding` suppresses a warning about locally-defined configuration.
-  In normal use, you would provide the lists of users, groups, &c via external
-  configuration files.
-* `-f yaml` specifies that the output should be [YAML](https://yaml.org/).
-  Omit to generate JSON (in which case you probably want to add `-p`, for
-  pretty-printing).
-
-Once you have the template, you can use the AWS Console or the CloudFormation instructions above
-to create and destroy the stack.
-
-
-# CDK
-
-First step is to install Node and NPM. The instructions to do this for the most recent
-versions can be found [here](https://nodejs.org/en/download/).
-
-Next, install CDK (for more information, read the [Getting Started](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html) tutorial).
-
-```
-npm install -g aws-cdk
-```
-
-From within the directory, run the following commands:
-
-```
-npm install
-
-cdk synth > template.yml
-```
-
-As with the CFNDSL example, this creates a CloudFormation template. You can then use the Console
-or CLI to manage the stack. Alternatively, you can let CDK deploy the stack (which will ask you
-to confirm changes):
-
-```
-cdk deploy
-```
-
-And destroy it:
-
-```
-cdk destroy
 ```

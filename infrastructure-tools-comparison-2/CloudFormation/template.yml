@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates an SQS queue and related resources"
+
+Parameters:
+
+  QueueName:
+    Description:                        "The name of the base SQS queue"
+    Type:                               "String"
+
+  RetentionPeriod:
+    Description:                        "Time (in seconds) that messages will remain in queue before being purged"
+    Type:                               "Number"
+    Default:                            86400
+
+  VisibilityTimeout:
+    Description:                        "Time (in seconds) that messages will be unavailable after being read"
+    Type:                               "Number"
+    Default:                            60
+
+  RetryCount:
+    Description:                        "The number of times that a message will be delivered before being moved to dead-letter queue"
+    Type:                               "Number"
+    Default:                            3
+
+
+Resources:
+
+  BaseQueue:
+    Type:                               "AWS::SQS::Queue"
+    DependsOn:                          [ DeadLetterQueue ]
+    Properties: 
+      QueueName:                        !Ref QueueName
+      MessageRetentionPeriod:           !Ref RetentionPeriod
+      VisibilityTimeout:                !Ref VisibilityTimeout
+      RedrivePolicy: 
+        deadLetterTargetArn:            !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount:                !Ref RetryCount
+
+
+  DeadLetterQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${QueueName}-DLQ"
+      MessageRetentionPeriod:           !Ref RetentionPeriod
+      VisibilityTimeout:                !Ref VisibilityTimeout
+
+
+  ConsumerPolicy:
+    Type:                               "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName:                !Sub "SQS-${QueueName}-Consumer"
+      Description:                      !Sub "Attach this policy to consumers of ${QueueName}"
+      PolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          -
+            Effect:                     "Allow"
+            Action:
+              -                         "sqs:ChangeMessageVisibility"
+              -                         "sqs:ChangeMessageVisibilityBatch"
+              -                         "sqs:DeleteMessage"
+              -                         "sqs:DeleteMessageBatch"
+              -                         "sqs:GetQueueAttributes"
+              -                         "sqs:GetQueueUrl"
+              -                         "sqs:ReceiveMessage"
+            Resource:                   
+              -                         !GetAtt BaseQueue.Arn
+              -                         !GetAtt DeadLetterQueue.Arn
+
+
+  ProducerPolicy:
+    Type:                               "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName:                !Sub "SQS-${QueueName}-Producer"
+      Description:                      !Sub "Attach this policy to producers for ${QueueName}"
+      PolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          -
+            Effect:                     "Allow"
+            Action:
+              -                         "sqs:GetQueueAttributes"
+              -                         "sqs:GetQueueUrl"
+              -                         "sqs:SendMessage"
+              -                         "sqs:SendMessageBatch"
+            Resource:                   
+              -                         !GetAtt BaseQueue.Arn
+
+
+Outputs:
+
+  BaseQueueUrl:
+    Description:                        "URL of the base queue"
+    Value:                              !Ref BaseQueue
+
+  DLQUrl:
+    Description:                        "URL of the dead-letter queue"
+    Value:                              !Ref DeadLetterQueue
