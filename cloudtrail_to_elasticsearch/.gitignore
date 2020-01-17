@@ -1,2 +1,14 @@
-# this is where the installation bundle is built
-dist/
+# modules cache
+__pycache__/
+
+# added by venv
+bin/
+lib/
+lib64
+pyvenv.cfg
+share/
+
+# Jupyter notebooks
+
+.ipynb_checkpoints/
+*.ipynb
