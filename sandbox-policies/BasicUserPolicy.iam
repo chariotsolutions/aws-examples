@@ -1,0 +1,37 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:ChangePassword",
+                "iam:CreateAccessKey",
+                "iam:CreateVirtualMFADevice",
+                "iam:DeactivateMFADevice",
+                "iam:DeleteAccessKey",
+                "iam:DeleteVirtualMFADevice",
+                "iam:EnableMFADevice",
+                "iam:GetAccessKeyLastUsed",
+                "iam:GetLoginProfile",
+                "iam:GetSSHPublicKey",
+                "iam:GetUser",
+                "iam:GetUserPolicy",
+                "iam:ListAccessKeys",
+                "iam:ListAttachedUserPolicies",
+                "iam:ListGroupsForUser",
+                "iam:ListMFADevices",
+                "iam:ResyncMFADevice",
+                "iam:UpdateAccessKey",
+                "iam:UpdateLoginProfile",
+                "iam:UpdateSSHPublicKey",
+                "iam:UpdateUser",
+                "iam:UploadSSHPublicKey"
+            ],
+            "Resource": [
+                "arn:aws:iam::366425516243:mfa/${aws:username}",
+                "arn:aws:iam::366425516243:mfa/${aws:username}/*",
+                "arn:aws:iam::366425516243:user/${aws:username}"
+            ]
+        }
+    ]
+}

@@ -16,9 +16,9 @@ This repository contains examples of AWS-related topics, typically supporting Ch
 
   Examples of using Terraform modules and CDK custom constructs.
 
-* `service_control_policies` 
+* `sandbox-policies` 
 
-  The service control policies that we use for developer sandbox accounts. Referenced by
+  IAM and service control policies for managing developer sandboxes. Referenced by
   [Building Developer Sandboxes on AWS](https://chariotsolutions.com/blog/post/building-developer-sandboxes-on-aws/).
 
 * `untagged_ec2_cleanup` 

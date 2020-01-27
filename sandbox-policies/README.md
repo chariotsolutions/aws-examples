@@ -1,9 +1,15 @@
-This directory contains the service control policies that we use at Chariot to manage our
+This directory contains polices -- both IAM and SCP -- that we use at Chariot to manage our
 developer sandboxes. They're saved here as general examples, referenced from
 [this blog post](https://chariotsolutions.com/blog/post/building-developer-sandboxes-on-aws/)
 but also form part of our infrastructure-as-code codebase.
 
-* `PreventAdminRoleDeletion` 
+* `BasicUserPolicy` (IAM) 
+
+  This policy is granted to all users in the root account. It allows them to log in, change
+  their password, and assign a virtual MFA device. We also have a very permissive read-only
+  policy that grants access to other IAM information.
+
+* `PreventAdminRoleDeletion` (SCP) 
 
   Each of our sandbox accounts has a role that grants administrator access. This role must
   be protected against changes, because the only alternative for managing these accounts is
@@ -15,7 +21,7 @@ but also form part of our infrastructure-as-code codebase.
   accident when creating a large number of workshop accounts. Rather than replace the
   latter with the former, it was easier to just protect both.
 
-* `SandboxGuardrail` 
+* `SandboxGuardrail` (SCP) 
 
   The basic execution limits for our sandbox accounts. This prevents the creation of
   expensive EC2 and RDS instance types, limits creation actions to the US regions, and
