@@ -88,8 +88,10 @@ Resources:
             Statement:
               Effect:                   "Allow"
               Action:
+                -                       "s3:DeleteObject"
+                -                       "s3:HeadObject"
                 -                       "s3:GetObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads" ]
+              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads/*" ]
         -
           PolicyName:                   "WriteToDestination"
           PolicyDocument:
@@ -98,7 +100,7 @@ Resources:
               Effect:                   "Allow"
               Action:
                 -                       "s3:PutObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-archive" ]
+              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-archive/*" ]
 
 
   ProcessorFunction:
@@ -111,13 +113,46 @@ Resources:
       Handler:                          "index.lambda_handler"
       Code: 
         ZipFile:                        |
+                                        import boto3
+                                        import os
+                                        
+                                        
+                                        archive_bucket = os.environ['ARCHIVE_BUCKET']
+                                        
+                                        s3_client = boto3.client('s3')
+                                        
+                                        
                                         def lambda_handler(event, context):
-                                            print("this is a dummy handler; please build and upload real handler")
+                                            for record in event.get('Records', []):
+                                                eventName = record['eventName']
+                                                bucket = record['s3']['bucket']['name']
+                                                key = record['s3']['object']['key']
+                                                try:
+                                                    process(s3_client, bucket, key)
+                                                    archive(s3_client, bucket, key)
+                                                except Exception as ex:
+                                                    # we'll print the exception and continue with the event
+                                                    print(ex)
+                                        
+                                        
+                                        def process(s3_client, bucket, key):
+                                            print(f'processing s3://{bucket}/{key}')
+                                            meta = s3_client.head_object(Bucket=bucket, Key=key)
+                                            print(f"filesize = {meta['ContentLength']}")
+                                        
+                                        
+                                        def archive(s3_client, bucket, key):
+                                            print(f'moving s3://{bucket}/{key} to s3://{archive_bucket}/{key}')
+                                            s3_client.copy(
+                                                CopySource={'Bucket': bucket, 'Key': key },
+                                                Bucket=archive_bucket,
+                                                Key=key)
+                                            s3_client.delete_object(Bucket=bucket, Key=key)
       MemorySize:                       256
-      Timeout:                          60
+      Timeout:                          15
       Environment: 
         Variables:
-          ARCHIVE_BUCKET_NAME:          !Ref ArchiveBucket
+          ARCHIVE_BUCKET:               !Ref ArchiveBucket
 
 
   ProcessorInvocationPermission:
