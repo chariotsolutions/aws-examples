@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "An example of S3 file handling using Lambdas"
+
+Parameters:
+
+  BaseBucketName:
+    Description:                        "A prefix used for all S3 buckets created by this stack"
+    Type:                               "String"
+    Default:                            ""
+
+
+Resources:
+
+  ##
+  ## Buckets
+  ##
+
+  StaticBucket:
+    Type:                               "AWS::S3::Bucket"
+    Properties: 
+      BucketName:                       !Sub "${BaseBucketName}-static"
+      AccessControl:                    "PublicRead"
+
+
+  UploadBucket:
+    Type:                               "AWS::S3::Bucket"
+    DependsOn:                          [ ProcessorInvocationPermission ]
+    Properties: 
+      BucketName:                       !Sub "${BaseBucketName}-uploads"
+      AccessControl:                    "Private"
+      CorsConfiguration:
+        CorsRules:
+          -
+            AllowedMethods:             ["PUT"]
+            AllowedOrigins:             [ "*" ]
+            AllowedHeaders:             [ "*" ]
+      LifecycleConfiguration: 
+        Rules:
+          -
+            Id:                         "DeleteUnprocessedUploads"
+            ExpirationInDays:           1
+            Status:                     "Enabled"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          -
+            Event:                      "s3:ObjectCreated:*"
+            Function:                   !GetAtt ProcessorFunction.Arn
+
+
+  ArchiveBucket:
+    Type:                               "AWS::S3::Bucket"
+    Properties: 
+      BucketName:                       !Sub "${BaseBucketName}-archive"
+      AccessControl:                    "Private"
+
+
+  ##
+  ## File-Processing Lambda
+  ##
+
+  ProcessorLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-Processor"
+      RetentionInDays:                  7
+
+
+  ProcessorRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Processor-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        -
+          PolicyName:                   "ReadFromSource"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:GetObject"
+              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads" ]
+        -
+          PolicyName:                   "WriteToDestination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:PutObject"
+              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-archive" ]
+
+
+  ProcessorFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Sub "${AWS::StackName}-Processor"
+      Description:                      !Sub "Processes files uploaded to ${BaseBucketName}-uploads and moves them to ${BaseBucketName}-archive"
+      Role:                             !GetAtt ProcessorRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        def lambda_handler(event, context):
+                                            print("this is a dummy handler; please build and upload real handler")
+      MemorySize:                       256
+      Timeout:                          60
+      Environment: 
+        Variables:
+          ARCHIVE_BUCKET_NAME:          !Ref ArchiveBucket
+
+
+  ProcessorInvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ ProcessorFunction ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt ProcessorFunction.Arn
+      Principal:                        "s3.amazonaws.com"
+      SourceAccount:                    !Ref AWS::AccountId
+      SourceArn:                        !Sub "arn:aws:s3:::${BaseBucketName}-uploads"
