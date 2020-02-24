@@ -3,8 +3,18 @@ Description:                            "An example of S3 file handling using La
 
 Parameters:
 
-  BaseBucketName:
-    Description:                        "A prefix used for all S3 buckets created by this stack"
+  StaticBucketName:
+    Description:                        "The name of the bucket that holds static content"
+    Type:                               "String"
+    Default:                            ""
+
+  UploadBucketName:
+    Description:                        "The name of the bucket that where files are uploaded"
+    Type:                               "String"
+    Default:                            ""
+
+  ArchiveBucketName:
+    Description:                        "The name of the bucket that where files are archived after processing"
     Type:                               "String"
     Default:                            ""
 
@@ -33,7 +43,7 @@ Resources:
   StaticBucket:
     Type:                               "AWS::S3::Bucket"
     Properties: 
-      BucketName:                       !Sub "${BaseBucketName}-static"
+      BucketName:                       !Ref StaticBucketName
       AccessControl:                    "Private"
 
 
@@ -41,7 +51,7 @@ Resources:
     Type:                               "AWS::S3::Bucket"
     DependsOn:                          [ ProcessorInvocationPermission ]
     Properties: 
-      BucketName:                       !Sub "${BaseBucketName}-uploads"
+      BucketName:                       !Ref UploadBucketName
       AccessControl:                    "Private"
       CorsConfiguration:
         CorsRules:
@@ -65,7 +75,7 @@ Resources:
   ArchiveBucket:
     Type:                               "AWS::S3::Bucket"
     Properties: 
-      BucketName:                       !Sub "${BaseBucketName}-archive"
+      BucketName:                       !Ref ArchiveBucketName
       AccessControl:                    "Private"
 
   ##
@@ -105,7 +115,7 @@ Resources:
                 -                       "s3:DeleteObject"
                 -                       "s3:HeadObject"
                 -                       "s3:GetObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads/*" ]
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
         -
           PolicyName:                   "WriteToDestination"
           PolicyDocument:
@@ -114,14 +124,14 @@ Resources:
               Effect:                   "Allow"
               Action:
                 -                       "s3:PutObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-archive/*" ]
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${ArchiveBucketName}/*" ]
 
 
   ProcessorFunction:
     Type:                               "AWS::Lambda::Function"
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-Processor"
-      Description:                      !Sub "Processes files uploaded to ${BaseBucketName}-uploads and moves them to ${BaseBucketName}-archive"
+      Description:                      !Sub "Processes files uploaded to ${UploadBucketName} and moves them to ${ArchiveBucketName}"
       Role:                             !GetAtt ProcessorRole.Arn
       Runtime:                          "python3.7"
       Handler:                          "index.lambda_handler"
@@ -166,7 +176,7 @@ Resources:
       Timeout:                          15
       Environment: 
         Variables:
-          ARCHIVE_BUCKET:               !Ref ArchiveBucket
+          ARCHIVE_BUCKET:               !Ref ArchiveBucketName
 
 
   ProcessorInvocationPermission:
@@ -177,7 +187,7 @@ Resources:
       FunctionName:                     !GetAtt ProcessorFunction.Arn
       Principal:                        "s3.amazonaws.com"
       SourceAccount:                    !Ref AWS::AccountId
-      SourceArn:                        !Sub "arn:aws:s3:::${BaseBucketName}-uploads"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}"
 
   ##
   ## A Lambda that creates a signed URL
@@ -214,7 +224,7 @@ Resources:
               Effect:                   "Allow"
               Action:
                 -                       "s3:PutObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads/*" ]
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
 
 
   SignedUrlLambda:
@@ -232,7 +242,6 @@ Resources:
 
                                         def lambda_handler(event, context):
                                             print(json.dumps(event))
-                                            key = "FIXME-extract_from_event"
                                             return {
                                                 'statusCode': 200,
                                                 'headers': {
@@ -246,7 +255,7 @@ Resources:
       Timeout:                          15
       Environment: 
         Variables:
-          UPLOAD_BUCKET:                !Ref UploadBucket
+          UPLOAD_BUCKET:                !Ref UploadBucketName
 
 
   SignedUrlLambdaPermission:
@@ -293,7 +302,7 @@ Resources:
               Effect:                   "Allow"
               Action:
                 -                       "s3:PutObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${BaseBucketName}-uploads/*" ]
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
 
 
   CredentialsLambda:
@@ -325,7 +334,7 @@ Resources:
       Timeout:                          15
       Environment: 
         Variables:
-          UPLOAD_BUCKET:                !Ref UploadBucket
+          UPLOAD_BUCKET:                !Ref UploadBucketName
 
 
   CredentialsLambdaPermission:
@@ -400,7 +409,7 @@ Resources:
       AuthorizationType:                "NONE"
       Integration: 
         Type:                           "HTTP_PROXY"
-        Uri:                            !Sub "https://${BaseBucketName}-static.s3.amazonaws.com/index.html"
+        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/index.html"
         IntegrationHttpMethod:          "GET"
         PassthroughBehavior:            "WHEN_NO_MATCH"
 
@@ -417,7 +426,7 @@ Resources:
         method.request.path.proxy:      true
       Integration: 
         Type:                           "HTTP_PROXY"
-        Uri:                            !Sub "https://${BaseBucketName}-static.s3.amazonaws.com/{proxy}"
+        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/{proxy}"
         IntegrationHttpMethod:          "GET"
         RequestParameters:
           integration.request.path.proxy: "method.request.path.proxy"
