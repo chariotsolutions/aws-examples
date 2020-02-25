@@ -239,16 +239,33 @@ Resources:
         ZipFile:                        |
                                         import boto3
                                         import json
+                                        import os
+
+                                        s3_client = boto3.client('s3')
+                                        bucket = os.environ['UPLOAD_BUCKET']
 
                                         def lambda_handler(event, context):
                                             print(json.dumps(event))
+                                            body = json.loads(event['body'])
+                                            key = body['key']
+                                            content_type = body['type']
+                                            
+                                            print(f'generating presigned URL for: s3://{bucket}/{key} ({content_type})')
+                                            
+                                            params = {
+                                                'Bucket': bucket,
+                                                'Key':    key,
+                                                'ContentType': content_type
+                                            }
+                                            url = s3_client.generate_presigned_url('put_object', params)
+                                            
                                             return {
                                                 'statusCode': 200,
                                                 'headers': {
                                                     'Content-Type': 'application/json'
                                                 },
                                                 'body': json.dumps({
-                                                    'url': 'bar'
+                                                    'url': url
                                                 })
                                             }
       MemorySize:                       256
