@@ -28,30 +28,23 @@ and an API Gateway:
 
 ## Usage
 
-### Deployment
-
-Deployment is a two-step process: the first is to create all of the infrastructure as
-a CloudFormation stack, the second is to upload static content.
+First, run the deployment script (you must have the CLI installed):
 
 ```
-aws s3 cp static/index.html s3://com-chariotsolutions-twobuckets-static/index.html               --acl public-read --content-type text/html
-aws s3 cp static/js/signed-url.js s3://com-chariotsolutions-twobuckets-static/js/signed-url.js   --acl public-read --content-type text/javascript
-aws s3 cp static/js/credentials.js s3://com-chariotsolutions-twobuckets-static/js/credentials.js --acl public-read --content-type text/javascript
+./deploy.sh STACK_NAME BASE_BUCKET_NAME
 ```
 
+`STACK_NAME` is the name for your stack; it must be unique within the account/region.
 
-### Running
+`BASE_BUCKET_NAME` is used to name the three buckets; the suffixes `-uploads`, `-archive`,
+and `-static` will be applied to it. Bucket names must be globally unique; I recommend a
+reverse domain name that includes the stack name: `com-example-mystack` (note that bucket
+names must be lowercase).
 
+This script should take less than five minutes to run. However, it uses the CLI's "wait"
+command, which doesn't time out until an hour has elapsed. You can either get the status
+of the stack via the CLI in another window, or watch the creation events in the console.
 
-### Undeployment
-
-To undeploy this example, you must first empty the S3 buckets (because CloudFormation
-won't delete a bucket that's not empty):
-
-```
-```
-
-Then, delete the CloudFormation stack, which will take down everything it created.
 
 
 ## Implementaion Notes
