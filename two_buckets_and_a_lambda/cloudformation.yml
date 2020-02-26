@@ -56,9 +56,10 @@ Resources:
       CorsConfiguration:
         CorsRules:
           -
-            AllowedMethods:             ["PUT"]
+            AllowedMethods:             ["PUT", "POST"]   # POST is needed for multipart uploads
             AllowedOrigins:             [ "*" ]
             AllowedHeaders:             [ "*" ]
+            ExposedHeaders:             [ "ETag" ]
       LifecycleConfiguration: 
         Rules:
           -
@@ -240,12 +241,12 @@ Resources:
                                         import boto3
                                         import json
                                         import os
-
+                                        
                                         s3_client = boto3.client('s3')
                                         bucket = os.environ['UPLOAD_BUCKET']
-
+                                        
                                         def lambda_handler(event, context):
-                                            print(json.dumps(event))
+                                            # print(json.dumps(event))
                                             body = json.loads(event['body'])
                                             key = body['key']
                                             content_type = body['type']
@@ -253,8 +254,8 @@ Resources:
                                             print(f'generating presigned URL for: s3://{bucket}/{key} ({content_type})')
                                             
                                             params = {
-                                                'Bucket': bucket,
-                                                'Key':    key,
+                                                'Bucket':      bucket,
+                                                'Key':         key,
                                                 'ContentType': content_type
                                             }
                                             url = s3_client.generate_presigned_url('put_object', params)
@@ -318,6 +319,30 @@ Resources:
             Statement:
               Effect:                   "Allow"
               Action:
+                -                       "sts:AssumeRole"
+              Resource:                 [ !GetAtt CredentialsAssumedRole.Arn ]
+
+
+  CredentialsAssumedRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Credentials-AssumedRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            AWS:                        !Ref AWS::AccountId   # too broad but prevents circular dependency
+          Action:                       "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName:                   "BaseUploadPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
                 -                       "s3:PutObject"
               Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
 
@@ -334,17 +359,50 @@ Resources:
         ZipFile:                        |
                                         import boto3
                                         import json
+                                        import os
 
+                                        sts_client = boto3.client('sts')
+
+                                        bucket = os.environ['UPLOAD_BUCKET']
+                                        role_arn = os.environ['ASSUMED_ROLE_ARN']
+                                        
                                         def lambda_handler(event, context):
-                                            print(json.dumps(event))
-                                            key = "FIXME-extract_from_event"
+                                            # print(json.dumps(event))
+                                            body = json.loads(event['body'])
+                                            key = body['key']
+
+                                            session_name = f"{context.function_name}-{context.aws_request_id}"
+                                            session_policy = {
+                                                'Version': '2012-10-17',
+                                                'Statement': [
+                                                    {
+                                                        'Effect': 'Allow',
+                                                        'Action': 's3:PutObject',
+                                                        'Resource': f'arn:aws:s3:::{bucket}/{key}'
+                                                    }
+                                                ]
+                                            }
+                                            
+                                            print(f"generating restricted credentials for: s3://{bucket}/{key} for session {session_name}")
+                                            
+                                            response = sts_client.assume_role(
+                                                RoleArn=role_arn,
+                                                RoleSessionName=session_name,
+                                                Policy=json.dumps(session_policy)
+                                            )
+                                            creds = response['Credentials']
+
                                             return {
                                                 'statusCode': 200,
                                                 'headers': {
                                                     'Content-Type': 'application/json'
                                                 },
                                                 'body': json.dumps({
-                                                    'url': 'bar'
+                                                    'access_key':     creds['AccessKeyId'],
+                                                    'secret_key':     creds['SecretAccessKey'],
+                                                    'session_token':  creds['SessionToken'],
+                                                    'region':         os.environ['AWS_REGION'],
+                                                    'bucket':         bucket
                                                 })
                                             }
       MemorySize:                       256
@@ -352,6 +410,7 @@ Resources:
       Environment: 
         Variables:
           UPLOAD_BUCKET:                !Ref UploadBucketName
+          ASSUMED_ROLE_ARN:             !GetAtt CredentialsAssumedRole.Arn
 
 
   CredentialsLambdaPermission:
