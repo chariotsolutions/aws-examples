@@ -541,3 +541,10 @@ Resources:
         IntegrationHttpMethod:          "POST"
         ContentHandling:                "CONVERT_TO_TEXT"
         PassthroughBehavior:            "WHEN_NO_MATCH"
+
+
+Outputs:
+
+  APIGatewayUrl:
+    Description:                        "The root URL for the example"
+    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/${DeploymentStageName}/index.html"
