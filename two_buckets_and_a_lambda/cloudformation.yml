@@ -23,6 +23,11 @@ Parameters:
     Type:                               "String"
     Default:                            "dev"
 
+  EnableTracing:
+    Description:                        "Set to true to enable X-Ray tracing of all requests"
+    Type:                               "String"
+    Default:                            "false"
+
   SignedUrlPathComponent:
     Description:                        "The path component that identifies the SignedURL endpoint (this is a stack-wide constant)"
     Type:                               "String"
@@ -32,6 +37,9 @@ Parameters:
     Description:                        "The path component that identifies the Credentials endpoint (this is a stack-wide constant)"
     Type:                               "String"
     Default:                            "credentials"
+
+Conditions:
+  EnableTracingCond:                    !Equals [ !Ref EnableTracing, "true" ]
 
 
 Resources:
@@ -70,7 +78,7 @@ Resources:
         LambdaConfigurations:
           -
             Event:                      "s3:ObjectCreated:*"
-            Function:                   !GetAtt ProcessorFunction.Arn
+            Function:                   !GetAtt ProcessorLambda.Arn
 
 
   ArchiveBucket:
@@ -91,7 +99,7 @@ Resources:
       RetentionInDays:                  7
 
 
-  ProcessorRole:
+  ProcessorExecutionRole:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
@@ -105,6 +113,7 @@ Resources:
           Action:                       "sts:AssumeRole"
       ManagedPolicyArns:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
         -
           PolicyName:                   "ReadFromSource"
@@ -128,12 +137,12 @@ Resources:
               Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${ArchiveBucketName}/*" ]
 
 
-  ProcessorFunction:
+  ProcessorLambda:
     Type:                               "AWS::Lambda::Function"
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-Processor"
       Description:                      !Sub "Processes files uploaded to ${UploadBucketName} and moves them to ${ArchiveBucketName}"
-      Role:                             !GetAtt ProcessorRole.Arn
+      Role:                             !GetAtt ProcessorExecutionRole.Arn
       Runtime:                          "python3.7"
       Handler:                          "index.lambda_handler"
       Code: 
@@ -175,6 +184,8 @@ Resources:
                                             s3_client.delete_object(Bucket=bucket, Key=key)
       MemorySize:                       256
       Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
       Environment: 
         Variables:
           ARCHIVE_BUCKET:               !Ref ArchiveBucketName
@@ -182,10 +193,10 @@ Resources:
 
   ProcessorInvocationPermission:
     Type:                               "AWS::Lambda::Permission"
-    DependsOn:                          [ ProcessorFunction ]
+    DependsOn:                          [ ProcessorLambda ]
     Properties:
       Action:                           "lambda:InvokeFunction"
-      FunctionName:                     !GetAtt ProcessorFunction.Arn
+      FunctionName:                     !GetAtt ProcessorLambda.Arn
       Principal:                        "s3.amazonaws.com"
       SourceAccount:                    !Ref AWS::AccountId
       SourceArn:                        !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}"
@@ -202,7 +213,7 @@ Resources:
       RetentionInDays:                  7
 
 
-  SignedUrlLambdaRole:
+  SignedUrlLambdaExecutionRole:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
@@ -216,6 +227,7 @@ Resources:
           Action:                       "sts:AssumeRole"
       ManagedPolicyArns:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
         -
           PolicyName:                   "AssumeUploadRole"
@@ -233,7 +245,7 @@ Resources:
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-SignedUrl"
       Description:                      !Sub "Generates a signed URL when given a key"
-      Role:                             !GetAtt SignedUrlLambdaRole.Arn
+      Role:                             !GetAtt SignedUrlLambdaExecutionRole.Arn
       Runtime:                          "python3.7"
       Handler:                          "index.lambda_handler"
       Code: 
@@ -271,6 +283,8 @@ Resources:
                                             }
       MemorySize:                       256
       Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
       Environment: 
         Variables:
           UPLOAD_BUCKET:                !Ref UploadBucketName
@@ -297,7 +311,7 @@ Resources:
       RetentionInDays:                  7
 
 
-  CredentialsLambdaRole:
+  CredentialsLambdaExecutionRole:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
@@ -311,6 +325,7 @@ Resources:
           Action:                       "sts:AssumeRole"
       ManagedPolicyArns:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
         -
           PolicyName:                   "AssumeUploadRole"
@@ -352,7 +367,7 @@ Resources:
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-Credentials"
       Description:                      !Sub "Generates limited-scope credentials when given a key"
-      Role:                             !GetAtt CredentialsLambdaRole.Arn
+      Role:                             !GetAtt CredentialsLambdaExecutionRole.Arn
       Runtime:                          "python3.7"
       Handler:                          "index.lambda_handler"
       Code: 
@@ -407,6 +422,8 @@ Resources:
                                             }
       MemorySize:                       256
       Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
       Environment: 
         Variables:
           UPLOAD_BUCKET:                !Ref UploadBucketName
@@ -434,6 +451,8 @@ Resources:
       Description:                      "Deployment of the Two Buckets and a Lambda example"
       RestApiId:                        !Ref APIGateway
       StageName:                        !Ref DeploymentStageName
+      StageDescription:
+        TracingEnabled:                 !Ref EnableTracing
 
 
   APIGateway:
