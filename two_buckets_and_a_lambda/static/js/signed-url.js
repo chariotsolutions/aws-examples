@@ -60,7 +60,8 @@ const signedUrlUpload = (function() {
         let url = await requestSignedUrl(selectedFile);
         let content = await loadFileContent(selectedFile);
         if (url && content) {
-            await uploadFile(selectedFile, content, url);
+            uploadFile(selectedFile, content, url)
+            .then(alert("upload complete"));
         }
     }
 

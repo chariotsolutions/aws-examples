@@ -52,7 +52,8 @@ const credentialsUpload = (function() {
         let selectedFile = document.getElementById('fileselector').files[0];
         let creds = await requestCredentials(selectedFile);
         if (creds) {
-            await uploadFile(selectedFile, creds.access_key, creds.secret_key, creds.session_token, creds.region, creds.bucket);
+            uploadFile(selectedFile, creds.access_key, creds.secret_key, creds.session_token, creds.region, creds.bucket)
+            .then(alert("upload complete"));
         }
     }
 
