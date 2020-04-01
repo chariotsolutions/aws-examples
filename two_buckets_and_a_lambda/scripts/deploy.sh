@@ -54,7 +54,7 @@ EOF
 
 aws cloudformation create-stack \
                    --stack-name ${STACK_NAME} \
-                   --template-body file://cloudformation.yml \
+                   --template-body file://scripts/cloudformation.yml \
                    --capabilities CAPABILITY_NAMED_IAM \
                    --parameters "$(< /tmp/cfparams.$$)"
 
