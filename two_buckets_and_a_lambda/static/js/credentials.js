@@ -20,7 +20,7 @@ const credentialsUpload = (function() {
                 key: selectedFile.name,
             })
         };
-        let response = await fetch(queryUrl, request);
+        const response = await fetch(queryUrl, request);
         if (response.ok) {
             return response.json();
         }
@@ -41,7 +41,7 @@ const credentialsUpload = (function() {
           ContentType:  selectedFile.type,
           Body:         selectedFile
          };
-        let upload = new AWS.S3.ManagedUpload({ params: params });
+        const upload = new AWS.S3.ManagedUpload({ params: params });
         upload.on('httpUploadProgress', function(evt) {
             console.log("uploaded " + evt.loaded + " of " + evt.total + " bytes for " + selectedFile.name);
         });
@@ -49,8 +49,8 @@ const credentialsUpload = (function() {
     }
 
     return async function() {
-        let selectedFile = document.getElementById('fileselector').files[0];
-        let creds = await requestCredentials(selectedFile);
+        const selectedFile = document.getElementById('fileselector').files[0];
+        const creds = await requestCredentials(selectedFile);
         if (creds) {
             await uploadFile(selectedFile, creds.access_key, creds.secret_key, creds.session_token, creds.region, creds.bucket);
             alert("upload complete");

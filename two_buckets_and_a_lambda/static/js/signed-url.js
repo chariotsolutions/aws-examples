@@ -20,7 +20,7 @@ const signedUrlUpload = (function() {
                 type: selectedFile.type
             })
         };
-        let response = await fetch(queryUrl, request);
+        const response = await fetch(queryUrl, request);
         if (response.ok) {
             content = await response.json();
             return content.url;
@@ -51,14 +51,14 @@ const signedUrlUpload = (function() {
             },
             body: content
         };
-        let response = await fetch(url, request);
+        const response = await fetch(url, request);
         console.log("upload status: " + response.status);
     }
 
     return async function() {
-        let selectedFile = document.getElementById('fileselector').files[0];
-        let url = await requestSignedUrl(selectedFile);
-        let content = await loadFileContent(selectedFile);
+        const selectedFile = document.getElementById('fileselector').files[0];
+        const url = await requestSignedUrl(selectedFile);
+        const content = await loadFileContent(selectedFile);
         if (url && content) {
             await uploadFile(selectedFile, content, url);
             alert("upload complete");
