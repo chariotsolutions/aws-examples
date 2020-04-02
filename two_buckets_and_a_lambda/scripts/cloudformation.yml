@@ -1,0 +1,579 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "An example of S3 file handling using Lambdas"
+
+Parameters:
+
+  StaticBucketName:
+    Description:                        "The name of the bucket that holds static content"
+    Type:                               "String"
+    Default:                            ""
+
+  UploadBucketName:
+    Description:                        "The name of the bucket that where files are uploaded"
+    Type:                               "String"
+    Default:                            ""
+
+  ArchiveBucketName:
+    Description:                        "The name of the bucket that where files are archived after processing"
+    Type:                               "String"
+    Default:                            ""
+
+  DeploymentStageName:
+    Description:                        "Identifies the initial deployment stage for API Gateway"
+    Type:                               "String"
+    Default:                            "dev"
+
+  EnableTracing:
+    Description:                        "Set to true to enable X-Ray tracing of all requests"
+    Type:                               "String"
+    Default:                            "false"
+
+  SignedUrlPathComponent:
+    Description:                        "The path component that identifies the SignedURL endpoint (this is a stack-wide constant)"
+    Type:                               "String"
+    Default:                            "signedurl"
+
+  CredentialsPathComponent:
+    Description:                        "The path component that identifies the Credentials endpoint (this is a stack-wide constant)"
+    Type:                               "String"
+    Default:                            "credentials"
+
+Conditions:
+  EnableTracingCond:                    !Equals [ !Ref EnableTracing, "true" ]
+
+
+Resources:
+
+  ##
+  ## Buckets
+  ##
+
+  StaticBucket:
+    Type:                               "AWS::S3::Bucket"
+    Properties: 
+      BucketName:                       !Ref StaticBucketName
+      AccessControl:                    "Private"
+
+
+  UploadBucket:
+    Type:                               "AWS::S3::Bucket"
+    DependsOn:                          [ ProcessorInvocationPermission ]
+    Properties: 
+      BucketName:                       !Ref UploadBucketName
+      AccessControl:                    "Private"
+      CorsConfiguration:
+        CorsRules:
+          -
+            AllowedMethods:             ["PUT", "POST"]   # POST is needed for multipart uploads
+            AllowedOrigins:             [ "*" ]
+            AllowedHeaders:             [ "*" ]
+            ExposedHeaders:             [ "ETag" ]
+      LifecycleConfiguration: 
+        Rules:
+          -
+            Id:                         "DeleteUnprocessedUploads"
+            ExpirationInDays:           1
+            Status:                     "Enabled"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          -
+            Event:                      "s3:ObjectCreated:*"
+            Function:                   !GetAtt ProcessorLambda.Arn
+
+
+  ArchiveBucket:
+    Type:                               "AWS::S3::Bucket"
+    Properties: 
+      BucketName:                       !Ref ArchiveBucketName
+      AccessControl:                    "Private"
+
+  ##
+  ## The file processing Lambda
+  ##
+
+  ProcessorLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-Processor"
+      RetentionInDays:                  7
+
+
+  ProcessorExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Processor-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+      Policies:
+        -
+          PolicyName:                   "ReadFromSource"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:DeleteObject"
+                -                       "s3:GetObject"
+              Resource:
+                -                       !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*"
+        -
+          PolicyName:                   "WriteToDestination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:PutObject"
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${ArchiveBucketName}/*" ]
+
+
+  ProcessorLambda:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Sub "${AWS::StackName}-Processor"
+      Description:                      !Sub "Processes files uploaded to ${UploadBucketName} and moves them to ${ArchiveBucketName}"
+      Role:                             !GetAtt ProcessorExecutionRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        import boto3
+                                        import logging
+                                        import os
+                                        import urllib.parse
+                                        
+                                        archive_bucket = os.environ['ARCHIVE_BUCKET']
+                                        
+                                        logger = logging.getLogger(__name__)
+                                        logger.setLevel(logging.DEBUG) 
+                                        
+                                        s3_client = boto3.client('s3')
+                                        
+                                        def lambda_handler(event, context):
+                                            for record in event.get('Records', []):
+                                                eventName = record['eventName']
+                                                bucket = record['s3']['bucket']['name']
+                                                raw_key = record['s3']['object']['key']
+                                                key = urllib.parse.unquote_plus(raw_key)
+                                                try:
+                                                    logger.info(f"processing s3://{bucket}/{key}")
+                                                    process(bucket, key)
+                                                    logger.info(f"moving s3://{bucket}/{key} to s3://{archive_bucket}/{key}")
+                                                    archive(bucket, key)
+                                                except Exception as ex:
+                                                    logger.exception(f"unhandled exception processing s3://{bucket}/{key}")
+                                        
+                                        
+                                        def process(bucket, key):
+                                            meta = s3_client.head_object(Bucket=bucket, Key=key)
+                                            logger.info(f"processing s3://{bucket}/{key} filesize = {meta['ContentLength']}")
+                                        
+                                        
+                                        def archive(bucket, key):
+                                            s3_client.copy(
+                                                CopySource={'Bucket': bucket, 'Key': key },
+                                                Bucket=archive_bucket,
+                                                Key=key)
+                                            s3_client.delete_object(Bucket=bucket, Key=key)
+      MemorySize:                       256
+      Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
+      Environment: 
+        Variables:
+          ARCHIVE_BUCKET:               !Ref ArchiveBucketName
+
+
+  ProcessorInvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ ProcessorLambda ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt ProcessorLambda.Arn
+      Principal:                        "s3.amazonaws.com"
+      SourceAccount:                    !Ref AWS::AccountId
+      SourceArn:                        !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}"
+
+  ##
+  ## A Lambda that creates a signed URL
+  ##
+
+  SignedUrlLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-SignedUrl"
+      RetentionInDays:                  7
+
+
+  SignedUrlLambdaExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-SignedUrl-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+      Policies:
+        -
+          PolicyName:                   "AssumeUploadRole"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:PutObject"
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
+
+
+  SignedUrlLambda:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Sub "${AWS::StackName}-SignedUrl"
+      Description:                      !Sub "Generates a signed URL when given a key"
+      Role:                             !GetAtt SignedUrlLambdaExecutionRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        import boto3
+                                        import json
+                                        import logging
+                                        import os
+                                        
+                                        bucket = os.environ['UPLOAD_BUCKET']
+                                        
+                                        s3_client = boto3.client('s3')
+                                        
+                                        logger = logging.getLogger(__name__)
+                                        logger.setLevel(logging.DEBUG) 
+                                        
+                                        def lambda_handler(event, context):
+                                            body = json.loads(event['body'])
+                                            key = body['key']
+                                            content_type = body['type']
+                                            
+                                            logger.info(f"generating presigned URL for: s3://{bucket}/{key} ({content_type})")
+                                            
+                                            params = {
+                                                'Bucket':      bucket,
+                                                'Key':         key,
+                                                'ContentType': content_type
+                                            }
+                                            url = s3_client.generate_presigned_url('put_object', params)
+                                            
+                                            return {
+                                                'statusCode': 200,
+                                                'headers': {
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                'body': json.dumps({
+                                                    'url': url
+                                                })
+                                            }
+      MemorySize:                       256
+      Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
+      Environment: 
+        Variables:
+          UPLOAD_BUCKET:                !Ref UploadBucketName
+
+
+  SignedUrlLambdaPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ SignedUrlLambda ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt SignedUrlLambda.Arn
+      Principal:                        "apigateway.amazonaws.com"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/POST/api/${SignedUrlPathComponent}"
+
+  ##
+  ## A Lambda that generates limited-scope credentials
+  ##
+
+  CredentialsLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-Credentials"
+      RetentionInDays:                  7
+
+
+  CredentialsLambdaExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Credentials-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+      Policies:
+        -
+          PolicyName:                   "AssumeUploadRole"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "sts:AssumeRole"
+              Resource:                 [ !GetAtt CredentialsAssumedRole.Arn ]
+
+
+  CredentialsAssumedRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Credentials-AssumedRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            AWS:                        !Ref AWS::AccountId   # too broad but prevents circular dependency
+          Action:                       "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName:                   "BaseUploadPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:PutObject"
+              Resource:                 [ !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*" ]
+
+
+  CredentialsLambda:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Sub "${AWS::StackName}-Credentials"
+      Description:                      !Sub "Generates limited-scope credentials when given a key"
+      Role:                             !GetAtt CredentialsLambdaExecutionRole.Arn
+      Runtime:                          "python3.7"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        import boto3
+                                        import json
+                                        import logging
+                                        import os
+                                        
+                                        bucket = os.environ['UPLOAD_BUCKET']
+                                        role_arn = os.environ['ASSUMED_ROLE_ARN']
+                                        
+                                        sts_client = boto3.client('sts')
+                                        
+                                        logger = logging.getLogger(__name__)
+                                        logger.setLevel(logging.DEBUG) 
+                                        
+                                        def lambda_handler(event, context):
+                                            body = json.loads(event['body'])
+                                            key = body['key']
+
+                                            session_name = f"{context.function_name}-{context.aws_request_id}"
+                                            session_policy = {
+                                                'Version': '2012-10-17',
+                                                'Statement': [
+                                                    {
+                                                        'Effect': 'Allow',
+                                                        'Action': 's3:PutObject',
+                                                        'Resource': f"arn:aws:s3:::{bucket}/{key}"
+                                                    }
+                                                ]
+                                            }
+                                            
+                                            logger.info(f"generating restricted credentials for: s3://{bucket}/{key} for session {session_name}")
+                                            
+                                            response = sts_client.assume_role(
+                                                RoleArn=role_arn,
+                                                RoleSessionName=session_name,
+                                                Policy=json.dumps(session_policy)
+                                            )
+                                            creds = response['Credentials']
+
+                                            return {
+                                                'statusCode': 200,
+                                                'headers': {
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                'body': json.dumps({
+                                                    'access_key':     creds['AccessKeyId'],
+                                                    'secret_key':     creds['SecretAccessKey'],
+                                                    'session_token':  creds['SessionToken'],
+                                                    'region':         os.environ['AWS_REGION'],
+                                                    'bucket':         bucket
+                                                })
+                                            }
+      MemorySize:                       256
+      Timeout:                          15
+      TracingConfig:
+        Mode:                           !If [ EnableTracingCond, "Active", "PassThrough" ]
+      Environment: 
+        Variables:
+          UPLOAD_BUCKET:                !Ref UploadBucketName
+          ASSUMED_ROLE_ARN:             !GetAtt CredentialsAssumedRole.Arn
+
+
+  CredentialsLambdaPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ CredentialsLambda ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt CredentialsLambda.Arn
+      Principal:                        "apigateway.amazonaws.com"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/POST/api/${CredentialsPathComponent}"
+
+
+  ###
+  ### API Gateway
+  ###
+
+  APIGatewayDeployment:
+    Type:                               "AWS::ApiGateway::Deployment"
+    DependsOn:                          [ APIGatewayRootMethod, APIGatewayStaticMethod, APIGatewaySignedUrlMethod, APIGatewayCredentialsMethod ]
+    Properties: 
+      Description:                      "Deployment of the Two Buckets and a Lambda example"
+      RestApiId:                        !Ref APIGateway
+      StageName:                        !Ref DeploymentStageName
+      StageDescription:
+        TracingEnabled:                 !Ref EnableTracing
+
+
+  APIGateway:
+    Type:                               "AWS::ApiGateway::RestApi"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}"
+      Description:                      "Endpoint for the Two Buckets and a Lambda example"
+      EndpointConfiguration: 
+        Types:                          [ "REGIONAL" ]
+
+
+  APIGatewayStaticResource:
+    Type:                               "AWS::ApiGateway::Resource"
+    Properties: 
+      RestApiId:                        !Ref APIGateway
+      ParentId:                         !GetAtt APIGateway.RootResourceId
+      PathPart:                         "{proxy+}"
+
+
+  APIGatewayAPIResource:
+    Type:                               "AWS::ApiGateway::Resource"
+    Properties: 
+      RestApiId:                        !Ref APIGateway
+      ParentId:                         !GetAtt APIGateway.RootResourceId
+      PathPart:                         "api"
+
+
+  APIGatewaySignedUrlResource:
+    Type:                               "AWS::ApiGateway::Resource"
+    Properties: 
+      RestApiId:                        !Ref APIGateway
+      ParentId:                         !Ref APIGatewayAPIResource
+      PathPart:                         !Ref SignedUrlPathComponent
+
+
+  APIGatewayCredentialsResource:
+    Type:                               "AWS::ApiGateway::Resource"
+    Properties: 
+      RestApiId:                        !Ref APIGateway
+      ParentId:                         !Ref APIGatewayAPIResource
+      PathPart:                         !Ref CredentialsPathComponent
+
+
+  APIGatewayRootMethod:
+    Type:                               "AWS::ApiGateway::Method"
+    Properties: 
+      OperationName:                    "DefaultIndexHtml"
+      RestApiId:                        !Ref APIGateway
+      ResourceId:                       !GetAtt APIGateway.RootResourceId
+      HttpMethod:                       "GET"
+      AuthorizationType:                "NONE"
+      Integration: 
+        Type:                           "HTTP_PROXY"
+        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/index.html"
+        IntegrationHttpMethod:          "GET"
+        PassthroughBehavior:            "WHEN_NO_MATCH"
+
+
+  APIGatewayStaticMethod:
+    Type:                               "AWS::ApiGateway::Method"
+    Properties: 
+      OperationName:                    "StaticContent"
+      RestApiId:                        !Ref APIGateway
+      ResourceId:                       !Ref APIGatewayStaticResource
+      HttpMethod:                       "GET"
+      AuthorizationType:                "NONE"
+      RequestParameters:
+        method.request.path.proxy:      true
+      Integration: 
+        Type:                           "HTTP_PROXY"
+        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/{proxy}"
+        IntegrationHttpMethod:          "GET"
+        RequestParameters:
+          integration.request.path.proxy: "method.request.path.proxy"
+        PassthroughBehavior:            "WHEN_NO_MATCH"
+
+
+  APIGatewaySignedUrlMethod:
+    Type:                               "AWS::ApiGateway::Method"
+    Properties: 
+      OperationName:                    "RetrieveSignedUrl"
+      RestApiId:                        !Ref APIGateway
+      ResourceId:                       !Ref APIGatewaySignedUrlResource
+      HttpMethod:                       "POST"
+      AuthorizationType:                "NONE"
+      Integration: 
+        Type:                           "AWS_PROXY"
+        Uri:                            !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SignedUrlLambda}/invocations"
+        IntegrationHttpMethod:          "POST"
+        ContentHandling:                "CONVERT_TO_TEXT"
+        PassthroughBehavior:            "WHEN_NO_MATCH"
+
+
+  APIGatewayCredentialsMethod:
+    Type:                               "AWS::ApiGateway::Method"
+    Properties: 
+      OperationName:                    "RetrieveCredentials"
+      RestApiId:                        !Ref APIGateway
+      ResourceId:                       !Ref APIGatewayCredentialsResource
+      HttpMethod:                       "POST"
+      AuthorizationType:                "NONE"
+      Integration: 
+        Type:                           "AWS_PROXY"
+        Uri:                            !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${CredentialsLambda}/invocations"
+        IntegrationHttpMethod:          "POST"
+        ContentHandling:                "CONVERT_TO_TEXT"
+        PassthroughBehavior:            "WHEN_NO_MATCH"
+
+
+Outputs:
+
+  APIGatewayUrl:
+    Description:                        "The root URL for the example"
+    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/${DeploymentStageName}/index.html"

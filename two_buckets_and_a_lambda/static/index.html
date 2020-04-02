@@ -1,0 +1,17 @@
+<html>
+<head>
+    <title> Two Buckets and a Lambda </title>
+<head>
+<body>
+    <p> Select your file:
+        <input type="file" id="fileselector">
+    <p> <button onclick="signedUrlUpload()">Upload via signed URL</button>
+    <p> <button onclick="credentialsUpload()">Upload via restricted credentials</button>
+    
+    <!-- for production deployments, you should only include the modules you need -->
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.625.0.min.js"></script>
+
+    <script src="js/signed-url.js"></script>
+    <script src="js/credentials.js"></script>
+</body>
+</html>
