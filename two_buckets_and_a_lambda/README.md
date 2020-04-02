@@ -59,3 +59,33 @@ scripts/deploy.sh STACK_NAME BASE_BUCKET_NAME
 
 
 ## Implementation Notes
+
+In addition to demonstrating the "two buckets" processing Lambda, this example also provides
+examples of uploading the files to S3. It is implemented as a simple web-app, using API
+Gateway to serve both static content and two Lambda-backed endpoints (`/api/credentials`
+and `/api/signedurl`). To simplify the example, I use "proxy" integations for all three.
+
+The client-side JavaScript code is intended as a tutorial, so breaks out the various steps
+as separate functions and does not rely on chained promises. It also creates the two
+operational functions in global scope, and explicitly attaches them to the buttons in HTML.
+Scroll to the end of the file to see this function.
+
+There is one bit of the JavaScript that requires some extra explanation
+
+```
+const rootUrl = window.location.href.replace(/[^/]*$/, "");
+const queryUrl = rootUrl + "api/signedurl";
+```
+
+One of the quirks of API Gateway is that it deploys "stages": you can have a development
+stage and a production stage of the same API (or, more realistically, a `v1` and `v2`
+stage). When you do this, the stage name is part of the URL:
+`https://fq14qko999.execute-api.us-east-1.amazonaws.com/dev/api/credentials`. In a
+typical web-app, you would refer to an endpoint within JavaScript or HTML without
+the hostname: `/api/credentials`. However, this will fail when running with API Gateway,
+_except in the case where you're using a custom domain name to access the endpoint._
+
+When the JavaScript file is loaded, `window.location.href` contains the URL of the web
+page: `https://fq14qko999.execute-api.us-east-1.amazonaws.com/dev/index.html` in this
+case. So the regex strips off the `index.html` part, and `queryUrl` adds the hardcoded
+path to the relevant Lambda endpoint.
