@@ -23,7 +23,41 @@ import os
 from aws_requests_auth.aws_auth import AWSRequestsAuth
 
 
-TOTAL_FIELDS_LIMIT = 4096
+# modern Elasticsearch doesn't use types, but still requires a type name
+MAPPING_TYPE = "cloudtrail-event"
+
+# this is the configuration for new indices
+DEFAULT_INDEX_CONFIG = json.dumps({
+    'settings': {
+        'index.mapping.total_fields.limit': 8192
+    },
+    'mappings': {
+        MAPPING_TYPE: {
+            'dynamic_templates': [
+                {
+                    'flattened_requestParameters': {
+                            'path_match': 'requestParameters_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }, {
+                    'flattened_responseElements': {
+                            'path_match': 'responseElements_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }, {
+                    'flattened_resources': {
+                            'path_match': 'resources_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }
+            ],
+            'properties': {
+                'apiVersion': { 'type': 'text' }
+            }
+        }
+    }
+})
+
 
 class ESHelper:
 
@@ -80,21 +114,16 @@ class ESHelper:
             return
         elif rsp.status_code == 404:
             print("creating index")
-            settings = json.dumps({
-                "settings": {
-                    "index.mapping.total_fields.limit": TOTAL_FIELDS_LIMIT
-                }
-            })
-            rsp = self.do_request(requests.put, index, settings)
+            rsp = self.do_request(requests.put, index, DEFAULT_INDEX_CONFIG)
             if rsp.status_code != 200:
-                print(f'failed to create index: {rsp.text}')
+                raise Exception(f'failed to create index: {rsp.text}')
         else:
             print(f'failed to retrieve index status: {rsp.text}')
 
 
     def prepare_event(self, event, index):
         return "\n".join([
-            json.dumps({ "index": { "_index": index, "_type": "cloudtrail-event", "_id": event['eventID'] }}),
+            json.dumps({ "index": { "_index": index, "_type": MAPPING_TYPE, "_id": event['eventID'] }}),
             json.dumps(event)
             ]) + "\n"
 
@@ -127,4 +156,3 @@ class ESHelper:
                 messages.add(item.get('error', {}).get('reason'))
                 failed_records.add(item.get('_id'))
         print(f'upload failed for {len(failed_records)} records:\n{messages}')
-            

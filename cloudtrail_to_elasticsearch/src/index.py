@@ -28,4 +28,8 @@ def lambda_handler(event, context):
         eventName = record['eventName']
         bucket = record['s3']['bucket']['name']
         key = record['s3']['object']['key']
-        processor.process_from_s3(bucket, key)
+        try:
+            print(f"processing s3://{bucket}/{key}")
+            processor.process_from_s3(bucket, key)
+        except Exception as ex:
+            print(f"failed to process file: {ex}")
