@@ -20,8 +20,51 @@ import os
 import re
 import sys
 
-import es_helper
-import s3_helper
+from es_helper import ESHelper
+from s3_helper import S3Helper
+
+
+# the index configuration that we'll use
+
+DEFAULT_MAPPING_TYPE = "cloudtrail-event"
+
+DEFAULT_INDEX_CONFIG = json.dumps({
+    'settings': {
+        'index.mapping.total_fields.limit': 8192
+    },
+    'mappings': {
+        DEFAULT_MAPPING_TYPE: {
+            'dynamic_templates': [
+                {
+                    'flattened_requestParameters': {
+                            'path_match': 'requestParameters_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }, {
+                    'flattened_responseElements': {
+                            'path_match': 'responseElements_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }, {
+                    'flattened_resources': {
+                            'path_match': 'resources_flattened.*',
+                            'mapping': { 'type': 'text' }
+                    }
+                }
+            ],
+            'properties': {
+                'apiVersion': { 'type': 'text' }
+            }
+        }
+    }
+})
+
+
+def create():
+  """ Factory method to create a default instance.
+  """
+  return Processor(ESHelper(mapping_type=DEFAULT_MAPPING_TYPE, index_config=DEFAULT_INDEX_CONFIG),
+                   S3Helper())
 
 
 class Processor:
@@ -37,7 +80,6 @@ class Processor:
     def process_from_s3(self, bucket, key):
         index = index_name(key)
         if index:
-            print(f'processing s3://{bucket}/{key}')
             content = self.s3_helper.retrieve(bucket, key)
             self.process(content, index)
         else:
@@ -114,6 +156,9 @@ def flatten_item(key, val, dst):
 def transform_flattened_elements(src):
     dst = {}
     for (k, v) in src.items():
+        # Elasticsearch doesn't like keys that have dots in them
+        k = k.replace(".", "_")
+        # json.dumps() doesn't like sets
         if isinstance(v, set):
             tmp = v
             v = list()

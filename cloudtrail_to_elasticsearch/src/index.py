@@ -17,11 +17,9 @@
 """ Lambda function to upload CloudTrail events to Elasticsearch
 """
 
-from es_helper import ESHelper
-from processor import Processor
-from s3_helper import S3Helper
+import processor
 
-processor = Processor(ESHelper(), S3Helper())
+px = processor.create()
 
 def lambda_handler(event, context):
     for record in event.get('Records', []):
@@ -30,6 +28,6 @@ def lambda_handler(event, context):
         key = record['s3']['object']['key']
         try:
             print(f"processing s3://{bucket}/{key}")
-            processor.process_from_s3(bucket, key)
+            px.process_from_s3(bucket, key)
         except Exception as ex:
             print(f"failed to process file: {ex}")
