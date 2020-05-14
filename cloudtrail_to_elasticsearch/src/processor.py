@@ -131,7 +131,9 @@ def flatten(event, key):
 
 def flatten_dict(src, dst):
     for key in src.keys():
-        flatten_item(key, src[key], dst)
+        # CloudTrail events sometimes contains blank keys; we'll skip those
+        if key:
+            flatten_item(key, src[key], dst)
     return dst
 
 
