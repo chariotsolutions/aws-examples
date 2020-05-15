@@ -23,11 +23,12 @@ import os
 from aws_requests_auth.aws_auth import AWSRequestsAuth
 
 
-TOTAL_FIELDS_LIMIT = 4096
-
 class ESHelper:
 
     """ Encapsulates operations against an Elasticsearch cluster.
+
+        This is intended to be a generic helper class, not tied to CloudTrail
+        processing.
 
         By default, instances are configured to access an AWS managed Elasticsearch
         cluster, retrieving the hostname and AWS credentials from the environment.
@@ -37,7 +38,17 @@ class ESHelper:
         mock instance.
     """
 
-    def __init__(self, hostname=None, use_aws_auth=True, use_https=True):
+    def __init__(self, hostname=None, use_aws_auth=True, use_https=True, mapping_type="_doc", index_config=None):
+        """ 
+            hostname      If provided, the hostname of the Elasticsearch cluster. If not
+                          provided, this is read from the environment variable ES_HOSTNAME.
+            use_aws_auth  If true, uses AWS signed requests; if false, simple HTTP(S).
+            use_https     If true, uses HTTPS requests; if false, HTTP.
+            mapping_type  For Elasticsearch versions below 7.x, the type name used to store
+                          records. For later versions, the default (_doc) may be used.
+            index_config  If provided, used to create a new index. This is a Python object
+                          that corresponds to the Elasticsearch configuration JSON.
+        """
         if hostname:
             self.hostname = hostname
         else:
@@ -58,6 +69,8 @@ class ESHelper:
             self.protocol = "https"
         else:
             self.protocol = "http"
+        self.index_config = index_config
+        self.mapping_type = mapping_type
     
 
     def upload(self, events, index):
@@ -79,22 +92,20 @@ class ESHelper:
         if rsp.status_code == 200:
             return
         elif rsp.status_code == 404:
-            print("creating index")
-            settings = json.dumps({
-                "settings": {
-                    "index.mapping.total_fields.limit": TOTAL_FIELDS_LIMIT
-                }
-            })
-            rsp = self.do_request(requests.put, index, settings)
+            print(f"creating index: {index}")
+            if self.index_config:
+                rsp = self.do_request(requests.put, index, self.index_config)
+            else:
+              pass  # first PUT will create index
             if rsp.status_code != 200:
-                print(f'failed to create index: {rsp.text}')
+                raise Exception(f'failed to create index: {rsp.text}')
         else:
             print(f'failed to retrieve index status: {rsp.text}')
 
 
     def prepare_event(self, event, index):
         return "\n".join([
-            json.dumps({ "index": { "_index": index, "_type": "cloudtrail-event", "_id": event['eventID'] }}),
+            json.dumps({ "index": { "_index": index, "_type": self.mapping_type, "_id": event['eventID'] }}),
             json.dumps(event)
             ]) + "\n"
 
@@ -119,12 +130,9 @@ class ESHelper:
         if not result.get('errors'):
             print("no errors")
             return
-        messages = set()
         failed_records = set()
         for item in result.get('items', []):
             item = item.get('index', {})
             if item.get('status', 500) > 299:
-                messages.add(item.get('error', {}).get('reason'))
                 failed_records.add(item.get('_id'))
-        print(f'upload failed for {len(failed_records)} records:\n{messages}')
-            
+        print(f'upload failed for {len(failed_records)} records: {list(failed_records)[:5]}')

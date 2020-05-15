@@ -23,8 +23,7 @@
 
 import sys
 
-from es_helper import ESHelper
-from processor import Processor
+import processor
 from s3_helper import S3Helper
 
 
@@ -32,9 +31,7 @@ if len(sys.argv) != 3:
     print(__doc__)
     sys.exit(1)
 
-# the helpers are constructed as separate objects so we can test with different params
-es = ESHelper(use_https=False)
 s3 = S3Helper()
+px = processor.create()
 
-processor = Processor(es, s3)
-s3.iterate_bucket(sys.argv[1], sys.argv[2], processor.process_from_s3)
+s3.iterate_bucket(sys.argv[1], sys.argv[2], px.process_from_s3)
