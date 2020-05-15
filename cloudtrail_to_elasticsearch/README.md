@@ -1,49 +1,49 @@
 This is a Lambda that will process CloudTrail log files from S3 and write the events
-into an Elasticsearch cluster. This allows easy exploration and summarization, versus
-tools such as AWS Athena.
+into an Elasticsearch cluster, where they can easily be explored (unlike, when using
+tools such as AWS Athena).
 
 
-## Warnings and Caveats
+# Warnings and Caveats
 
-You will incur charges for the Elasticsearch cluster and Lambda invocations. The CloudFormation
-template creates a stack using a single `t2.medium.elasticsearch` instance and 32 GB of disk. 
+You will incur charges for the Elasticsearch cluster and Lambda invocations, as well as
+for S3 storage of the raw CloudTrail events.. The provided CloudFormation template
+creates a stack using a single `t2.medium.elasticsearch` instance and 32 GB of disk. 
 This costs $1.75 per day plus storage charges of $0.32/month.
 
-Elasticsearch does not automatically clean up its indexes. You can use the cleanup Lambda described
-[here](https://github.com/kdgregory/aws-misc/tree/master/lambda/es-cleanup-signed) to maintain a
-constant number of indexes. As configured, the Lambda creates one index for each month of data.
-How many indexes you can support will depend on your API volume and the size of the cluster.
+Elasticsearch does not automatically clean up its indexes. You can use the cleanup Lambda
+described [here](https://github.com/kdgregory/aws-misc/tree/master/lambda/es-cleanup-signed)
+to maintain a constant number of indexes. As configured, the Lambda creates one index for
+each month of data.  How many indexes you can support will depend on your API volume and the
+size of the cluster.
 
-Deleting the Lambda function -- either manually or by deleting the CloudFormation stack -- does
-_not_ delete the event trigger. You must explicitly delete it by going to the S3 bucket, clicking
-"Events" under the "Properties" tab, and then deleting the notification.
+Deleting the Lambda function -- either manually or by deleting the CloudFormation stack --
+does _not_ delete the event trigger. You must explicitly delete it by going to the S3
+bucket, clicking "Events" under the "Properties" tab, and then deleting the notification.
+
+
+# Implementation Notes
+
+Before we get into deploying the Lambda, here are a few of the constraints that went into its
+design.
 
 
 ## Event Transformation
 
-The big challenge with storing CloudTrail events in Elasticsearch is that the events
-have a large variety of sub-objects, with arbitrary nesting. The `requestParameters`
-and `responseElements` sub-objects are a particular challenge: not only are there a
-large number of distinct fields in these objects (causing what the Elastic docs call
-a "mapping explosion"), but they also contains arrays of objects, which [Elasticsearch
-doesn't handle well](https://www.elastic.co/guide/en/elasticsearch/reference/current/array.html)
+The big challenge with storing CloudTrail events in Elasticsearch is that the events have a large
+variety of sub-objects, with arbitrary nesting. The `requestParameters` and `responseElements`
+sub-objects are a particular challenge: not only are there a lot of distinct fields in these
+objects (causing what the Elastic docs call a "mapping explosion"), but they also contain arrays
+of objects, which [Elasticsearch doesn't handle well](https://www.elastic.co/guide/en/elasticsearch/reference/current/array.html)
 (in my experience, it gives up and leaves the sub-object unindexed).
 
-While the Lambda could explicitly transform each event, that would be an endless task:
-AWS constantly adds new API calls. Moreover, dynamic mapping is one of Elasticsearch's
+While the Lambda could explicitly transform each event into a standard format, that would be an
+endless task: AWS constantly adds new API calls. Moreover, dynamic mapping is one of Elasticsearch's
 strengths; we should use it.
 
-The first step to meeting this challenge is increasing the number of fields that
-can be stored in an index. The default is 1000, and I've increased it to 4096 (which
-I think should be sufficient, but the module will log an error if not).
-
-> If this limit turns out to _not_ be sufficient, you will need to increase it in
-  the `es_helper` module, drop the affected index, and reindex events.
-
-The second compensation is to "flatten" the `requestParameters`, `responseElements`,
-and `resources` sub-objects. This is best explained by example: the `RunInstances`
-API call returns an array of objects, one per isntance created. The CloudTrail
-event looks like this (showing only the fields relevant to this example):
+My solution was to "flatten" the `requestParameters`, `responseElements`, and `resources` sub-objects
+before writing the event. This is best explained by example: the `RunInstances` API call returns an
+array of objects, one per isntance created. The CloudTrail event looks like this (showing only the
+fields relevant to this example):
 
 ```
 {
@@ -75,7 +75,7 @@ event looks like this (showing only the fields relevant to this example):
 }
 ```
 
-The `responseElements` child object will be replaced by:
+"Flattening" the event transforms the `responseElements` child object into this:
 
 ```
 "responseElements_flattened": {
@@ -86,10 +86,11 @@ The `responseElements` child object will be replaced by:
     ...
 ```
 
-There are a few things to notice: first, the `instancesSet`, `items`, and `placement`
-keys have disappeared entirely, as they weren't leaf keys. Second is that each sub-key
-references an array of values. In addition, all of those values are strings, even if
-the source value is a number.
+There are a few things to notice: first, the `instancesSet`, `items`, and `placement` keys have
+disappeared entirely, as they weren't leaf keys. Second is that each sub-key references an
+array of values. Lastly, all of those values are strings, even if the source value was a
+number (unfortunately, Elasticsearch sometimes tries to be smart about parsing strings,
+which causes an occasional field conflict; see [below](#elasticsearch-index-creation)).
 
 In my opinion, this transformation is easier to use than one that attempts to maintain
 the hierarchical structure: if I need to find the `RunInstances` event that created an
@@ -99,10 +100,10 @@ however, lead to some strangeness: for example, the `RunInstances` event has an
 `instanceState.code` value and a `stateReason.code` value; both are flattened into
 `code`, and the former is converted to a string.
 
-> Note: [flattened fields](https://www.elastic.co/guide/en/elasticsearch/reference/master/flattened.html)
-  are one of the features of the non-open-source version of Elasticsearch. If you are
-  self-hosting, and are willing to pre-create your mappings, you could take advantage
-  of that.
+> Note: the non-open-source version of Elasticsearch provides
+  [flattened fields](https://www.elastic.co/guide/en/elasticsearch/reference/master/flattened.html).
+  If you are self-hosting, and are willing to pre-create your mappings, you could
+  take advantage of them.
 
 Lastly, the transformation preserves the "raw" values of these fields as JSON strings,
 using the keys `requestParameters_raw`, `responseElements_raw`, and `resources_raw`.
@@ -110,41 +111,112 @@ You can use these fields to identify specific hierarchical values, and they're a
 indexed as free-form text.
 
 
-## Building
+## Elasticsearch Index Creation
 
-This project is designed to be built in a Python virtual environment. Start by creating
-and activating that environment (note: all instructions in this section apply to Linux;
-if you're using something different, refer to your Python documentation).
+As I mentioned earlier, we rely on dynamic mapping to handle the wide variety of fields
+in a CloudTrail event. However, this can cause Elasticsearch to make the wrong choice
+for field type. For example, if it sees something that it can parse as a date, it will
+chose the `date` field type. If it later sees something in that field that _can't_ be
+parsed as a date, it will reject the record.
 
-```
-python3 -m venv `pwd`
-. bin/activate
-```
+The `apiVersion` field behaves just this way: its values actually represent dates, but
+different services use different formats. The "flattened" fields described above are
+another case: even though I write them into the JSON as strings, they sometimes get parsed
+as something else.
 
-The project has the following dependencies:
+The solution to these problems is to make some explicit mapping decisions when creating
+the index -- and to _explicitly_ create it, rather than let Elasticsearch create it the
+first time you try to write data.
 
-* [`boto3`](https://pypi.org/project/boto3/)
-* [`requests`](https://pypi.org/project/requests/)
-* [`aws-requests-auth`](https://pypi.org/project/aws-requests-auth/)
-
-All three are required for command-line use; `boto3` is provided by the Lambda runtime,
-so should be omitted when building a deployment bundle. As such, I decided to forego
-`requirements.txt` and manually install; pick whichever of the following commands is
-appropriate for your use.
-
-```
-# for CLI
-pip install boto3 requests aws-requests-auth
-```
+Here is the default mapping that we use, which specifies an explicit mapping for `apiVersion`
+and [dynamic templates](https://www.elastic.co/guide/en/elasticsearch/reference/6.8/dynamic-templates.html)
+for the various "flattened" fields. These dynamic templates tell Elasticsearch that any
+fields that match the pattern should be indexed as text, regardless of what it thinks
+they should be.
 
 ```
-# for Lambda
-pip install requests aws-requests-auth
+'mappings': {
+    'cloudtrail_event': {
+        'dynamic_templates': [
+            {
+                'flattened_requestParameters': {
+                        'path_match': 'requestParameters_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
+            }, {
+                'flattened_responseElements': {
+                        'path_match': 'responseElements_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
+            }, {
+                'flattened_resources': {
+                        'path_match': 'resources_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
+            }
+        ],
+        'properties': {
+            'apiVersion': { 'type': 'text' }
+        }
+    }
+}
 ```
 
-To deploy on Lambda you must to create a deployment bundle. Lambda wants a ZIP file with
-all modules at the top level, so this means a couple of steps (since it's not something
-that I build frequently, I haven't created a build script).
+There's one more thing to configure: the maximum number of allowed fields. This is
+far beyond what we've seen in our environment, but I went through several iterations
+of "oops, that wasn't enough." This is also configured by the Lambda when creating a
+new index:
+
+```
+'settings': {
+    'index.mapping.total_fields.limit': 8192
+}
+```
+
+There are two additional settings that I haven't put into the code: number of shards
+per index and number of replicas per shard. With AWS Managed Elasticsearch 6.8, each
+index defaults to five shards, and one replica per shard. Unless you have enormouse
+volume, this is far too many shards: for time-series data (which logs are), Elastic
+recommends [20-40 GB per shard](https://www.elastic.co/blog/how-many-shards-should-i-have-in-my-elasticsearch-cluster).
+
+We've found that 1,000,000 CloudTrail events translates into approximately 1.2 GB,
+and our monthly usage is lower than that, so there's no reason for multiple shards.
+Moreover, our cluster runs on a single node (rather than pay for an extra node,
+we're willing to recover from snapshot if the cluser goes south). This means that
+there's no reason for shard replicas, as they won't be assigned to a node.
+
+If you are in a similar situation, edit the default index configuration (in
+`processor.py`), changing the settings to look like this:
+
+```
+'settings': {
+    'index.mapping.total_fields.limit': 8192,
+    'index.number_of_shards': 1,
+    'index.number_of_replicas': 0
+}
+```
+
+
+# Building
+
+This project consists of a single Lambda, written in Python, using the
+[`requests`](https://pypi.org/project/requests/) and
+[`aws-requests-auth`](https://pypi.org/project/aws-requests-auth/)
+libraries to write to Elasticsearch (it was adapted from prior work; I might rewrite
+using the Elasticsearch Python libraries, but this is a low-priority task).
+
+To produce the deployment bundle for Lambda, you need to combine the source code (found
+in the `src` directory) with the libraries. Rather than use a virtual environment, I
+just install the libraries using `pip` (note: `--system` is only required for Ubuntu,
+which otherwise ignores the `--target` option, and you can omit `boto3` if you're
+just planning to upload to Lambda):
+
+```
+pip3 install --system --target lib boto3 requests aws-requests-auth
+```
+
+To build the deployment bundle, you need to produce a ZIP file that combines the
+`src` and `lib` directories. Here are the commands for Linux:
 
 ```
 rm /tmp/cloudtrail-lambda.zip
@@ -159,15 +231,15 @@ popd
 ```
 
 
-## Deploying on Lambda
+## Deploying
 
-Deployment requires multiple steps:
+Deployment is a multi-step process:
 
 1. Create the Elasticsearch cluster and a dummy Lambda using the [CloudFormation template](cloudformation.yml).
    This template requires the following parameters:
 
     * `LambdaName`:
-      The name of the Lambda function. This is also used for the function's execution role.
+      The name of the Lambda function. This is also used to name the function's execution role.
     * `CloudTrailBucket`:
       The name of the S3 bucket where CloudTrail is saving event logs.
     * `CloudTrailKey`:
@@ -178,7 +250,8 @@ Deployment requires multiple steps:
       (ie, lowercase and with hyphens but no underscores).
     * `ElasticsearchInstanceType`:
       The type of instance to use for the Elasticsearch cluster. The default is `t2.medium.elasticsearch`,
-      which will be sufficient for a relatively low-volume environment.
+      which is sufficient for a few million events per month, but may need to be increased
+      if you're in a high-activity organization.
     * `ElasticsearchStorageSize`:
       The size of the storage volume, in gigabytes. The maximum size depends on the selected
       instance type; the default is 32.
@@ -194,9 +267,9 @@ Deployment requires multiple steps:
 
 2. Create and upload the distribution bundle for the Lambda function.
 
-   To simplify the CloudFormation template, I created a dummy function; when invoked, it will
-   tell you to upload the real function. I find this easier to manage for one-off Lambdas than
-   the "standard" process of first uploading the function bundle to S3 then telling CloudFormation
+   To simplify the CloudFormation template, I created a dummy function; when invoked, it will tell
+   you to upload the real function. I find this easier to manage for one-off Lambdas than the
+   "standard" process of first uploading the function bundle to S3 theand n telling CloudFormation
    where to find it.
 
    This step is simply a matter of going to the Lambda function definition in the AWS Console,
@@ -218,14 +291,14 @@ index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). 
 configure this index in Kibana, and start to explore your API events.
 
 
-## Configuring Kibana
+# Configuring Kibana
 
 Before using Kibana, you must [create an index pattern](https://www.elastic.co/guide/en/kibana/current/index-patterns.html).
 For indexes generated by this project, the pattern name should be `cloudtrail-*`, and the
 time filter field should be `eventTime`.
 
 
-## Running on the command-line
+# Running on the command-line
 
 If you've had CloudTrail enabled, you'll already have events stored on S3. To load these files
 into Elasticsearch, you can invoke the loader from the command line.
@@ -246,5 +319,5 @@ using the file's datestamp.
 src/bulk_upload.py BUCKET_NAME PREFIX
 ```
 
-Note that Elasticsearch updates are idempotent, based on the CloudTrail event ID, so you
-can run the upload scripts as many times as you'd like.
+Note that Elasticsearch updates are idempotent, based on the CloudTrail event ID, so you can run
+the upload scripts as many times as you'd like (you will, however, be charged for data transfer).
