@@ -233,7 +233,7 @@ Resources:
         -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
         -
-          PolicyName:                   "AssumeUploadRole"
+          PolicyName:                   "AllowUploads"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
