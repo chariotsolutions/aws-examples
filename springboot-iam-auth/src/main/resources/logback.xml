@@ -1,0 +1,18 @@
+<configuration debug="false">
+
+    <jmxConfigurator />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{ISO8601} %-5level [%thread] %logger{24} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="warn">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <logger name="com.chariotsolutions" level="debug">
+    </logger>
+
+</configuration>

@@ -1,0 +1,183 @@
+##
+## Template to create a pre-provisioned RDS Postgres instance with IAM authentication.
+##
+## Notes:
+##
+##  - The Postgres engine version is hardcoded at 11.7. If you want to change
+##    the major version, note that you'll also have to change ParameterGroup.
+##  - The database master user and default database are retrieved from stack
+##    parameters, both with default values of "postgres".
+##  - The master user password is generated as a Secrets Manager secret that
+##    is also created by this template.
+##  - By default, SSL is enabled.
+##  - The database is publicly accessible, with a security group to control
+##    access. This group has a single ingres rule, allowing access from an
+##    IP address (in CIDR format) passed as a parameter.
+##
+
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Example RDS instance"
+
+Parameters:
+
+  ServerName:
+    Description:                        "The name of the database server (also used for related resources)"
+    Type:                               "String"
+
+  InstanceClass:
+    Description:                        "Database compute engine"
+    Type:                               String
+    Default:                            "db.t3.medium"
+
+  StorageSize:
+    Description:                        "Database storage size, in gigabytes"
+    Type:                               String
+    Default:                            "50"
+
+  VpcId:
+    Description:                        "VPC where the database will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  SubnetIds:
+    Description:                        "Allowed subnets for database deployment (typically private)"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+  AllowedIP:
+    Description:                        "An IP address allowed to connect to the database (in CIDR format)"
+    Type:                               "String"
+
+  MasterUserName:
+    Description:                        "The name of the database master user"
+    Type:                               "String"
+    Default:                            "postgres"
+
+  DefaultDatabaseName:
+    Description:                        "The name of the default database for the instance"
+    Type:                               "String"
+    Default:                            "postgres"
+
+
+Resources:
+
+##
+## Networking
+##
+
+  SecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "DatabaseSecurityGroup-${ServerName}"
+      GroupDescription:                 "Allows access to the database (nominally from application)"
+      VpcId:                            !Ref VpcId
+      SecurityGroupIngress:
+        -
+          Description:                  "Access from user network"
+          IpProtocol:                   "tcp"
+          FromPort:                     5432
+          ToPort:                       5432
+          CidrIp:                       !Ref AllowedIP
+
+
+  SubnetGroup:
+    Type:                               "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupName:                !Ref ServerName
+      DBSubnetGroupDescription:         !Sub "Managed by CloudFormation: ${AWS::StackName}"
+      SubnetIds:                        !Ref SubnetIds
+
+
+##
+## Secrets Manager
+##
+## Note: while this template is used for a database server that supports IAM authentication,
+##       Secrets Manager remains the best way to configure that server's master user.
+##
+
+  MasterUser:
+    Type:                               "AWS::SecretsManager::Secret"
+    Properties:
+      Name:                             !Sub "${ServerName}-MasterUser"
+      Description:                      !Sub "RDS master username and password"
+      GenerateSecretString:
+        SecretStringTemplate:           !Sub |
+                                        {
+                                          "username": "${MasterUserName}",
+                                          "database": "${DefaultDatabaseName}"
+                                        }
+        GenerateStringKey:              "password"
+        ExcludePunctuation:             true  # easier to select for those times that you need to copy/paste
+        PasswordLength:                 64    # double the default length to compensate for limited characters
+
+
+  DatabaseAttachment:
+    Type:                               "AWS::SecretsManager::SecretTargetAttachment"
+    Properties: 
+      SecretId:                         !Ref MasterUser
+      TargetId:                         !Ref Instance
+      TargetType:                       "AWS::RDS::DBInstance"
+
+
+##
+## Database
+##
+
+  ParameterGroup:
+    Type:                               "AWS::RDS::DBParameterGroup"
+    Properties:
+      Description:                      !Sub "managed by CloudFormation: ${AWS::StackName}"
+      Family:                           "postgres11"
+      Parameters:
+        ssl:                            "1"
+
+
+  Instance:
+    Type:                               "AWS::RDS::DBInstance"
+    Properties:
+      DBInstanceIdentifier:             !Ref ServerName
+      Engine:                           "postgres"
+      EngineVersion:                    "11.7"
+      DBParameterGroupName:             !Ref ParameterGroup
+      DBInstanceClass:                  !Ref InstanceClass
+      AllocatedStorage:                 !Ref StorageSize
+      StorageType:                      "gp2"
+      StorageEncrypted:                 true
+      MasterUsername:                   !Sub "{{resolve:secretsmanager:${MasterUser}:SecretString:username}}"
+      MasterUserPassword:               !Sub "{{resolve:secretsmanager:${MasterUser}:SecretString:password}}"
+      DBName:                           !Sub "{{resolve:secretsmanager:${MasterUser}:SecretString:database}}"
+      EnableIAMDatabaseAuthentication:  true
+      DBSubnetGroupName:                !Ref SubnetGroup
+      PubliclyAccessible:               true
+      VPCSecurityGroups:                [ !Ref SecurityGroup ]
+      PreferredMaintenanceWindow:       "Sun:06:00-Sun:06:59"
+      AllowMajorVersionUpgrade:         false
+      AutoMinorVersionUpgrade:          true
+      PreferredBackupWindow:            "05:00-05:30"
+      BackupRetentionPeriod:            7
+      CopyTagsToSnapshot:               true
+
+##
+## Outputs
+##
+
+Outputs:
+
+  MasterUserSecretArn:
+    Description:                      "The ARN of the secret containing database user and password"
+    Value:                            !Ref MasterUser
+
+  PGHOST:
+    Description:                      "The database instance hostname"
+    Value:                            !GetAtt Instance.Endpoint.Address
+
+  PGPORT:
+    Description:                      "The database instance port"
+    Value:                            !GetAtt Instance.Endpoint.Port
+
+  PGUSER:
+    Description:                      "The database instance master user"
+    Value:                            !Ref MasterUserName
+
+  PGDATABASE:
+    Description:                      "The database instance default database"
+    Value:                            !Ref DefaultDatabaseName
