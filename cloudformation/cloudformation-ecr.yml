@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates an ECR repository that will hold a Lambda container"
+
+Parameters:
+
+  ImageName:
+    Description:                        "Name of the repository (this is the simple name for the image)"
+    Type:                               "String"
+    Default:                            "container-example"
+
+Resources:
+
+  ECRRepository:
+    Type:                               "AWS::ECR::Repository"
+    Properties: 
+      RepositoryName:                   !Ref ImageName
+      ImageTagMutability:               MUTABLE
+      RepositoryPolicyText:
+        Version:                        "2008-10-17"
+        Statement:
+          - Sid:                        "AllowLambda"
+            Effect:                     "Allow"
+            Principal: 
+              Service:
+                -                       "lambda.amazonaws.com"
+            Action:
+              -                         "ecr:BatchGetImage"
+              -                         "ecr:DeleteRepositoryPolicy"
+              -                         "ecr:GetDownloadUrlForLayer"
+              -                         "ecr:GetRepositoryPolicy"
+              -                         "ecr:SetRepositoryPolicy"
