@@ -16,7 +16,7 @@ Parameters:
   CloudTrailKey:
     Description:                        "The path in that bucket for new CloudTrail event files, with trailing slash"
     Type:                               "String"
-    Default:                            "cloudtrail/"
+    Default:                            ""
 
   ElasticsearchDomainName:
     Description:                        "Name for the Elasticsearch cluster (must be DNS-legal)"
@@ -137,8 +137,8 @@ Resources:
       Code: 
         ZipFile:                        |
                                         def lambda_handler(event, context):
-                                            print("this is a dummy handler; please build and upload real handler")
-      MemorySize:                       256
+                                            raise "this is a dummy handler; please build and upload the real handler"
+      MemorySize:                       512
       Timeout:                          60
       Environment: 
         Variables:
