@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Lambda that's deployed by a Makefile running within a Docker container"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "Example"
+
+Resources:
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      #Policies:
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Example for deploying from within a Docker container"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          "python3.8"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        def lambda_handler(event, context):
+                                            raise Exception("this is a dummy handler; please build and upload real handler")
+      MemorySize:                       512
+      Timeout:                          15
