@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates a Lambda function that's deployed as a container"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "ContainerExample"
+
+  ImageName:
+    Description:                        "The base name of an image stored in ECR"
+    Type:                               "String"
+    Default:                            "container-example"
+
+  ImageTag:
+    Description:                        "The tag of that image"
+    Type:                               "String"
+    Default:                            "latest"
+
+Resources:
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      #Policies:
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Lambda function that uses a container image"
+      Role:                             !GetAtt LambdaRole.Arn
+      PackageType:                      Image
+      Code:
+        ImageUri:                       !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ImageName}:${ImageTag}"
+      MemorySize:                       256
+      Timeout:                          10
+      Environment:
+        Variables:
+          EXAMPLE:                      "dummy envar"
