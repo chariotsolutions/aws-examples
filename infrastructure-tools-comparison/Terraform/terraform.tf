@@ -53,15 +53,15 @@ variable "group_permissions" {
 ##
 
 resource "aws_iam_user" "users" {
-  count = length(var.users)
-  name  = "${var.users[count.index]}"
+  for_each      = toset(var.users)
+  name          = each.key
   force_destroy = true
 }
 
 resource "aws_iam_user_policy_attachment" "base_user_policy_attachment" {
-  count      = length(var.users)
-  user       = "${var.users[count.index]}"
-  policy_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/BasicUserPolicy"
+  for_each      = toset(var.users)
+  user          = each.key
+  policy_arn    = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/BasicUserPolicy"
 }
 
 ##
@@ -69,8 +69,8 @@ resource "aws_iam_user_policy_attachment" "base_user_policy_attachment" {
 ##
 
 resource "aws_iam_group" "groups" {
-  count = length(var.groups)
-  name = "${var.groups[count.index]}"
+  for_each  = toset(var.groups)
+  name      = each.key
 }
 
 ##
@@ -78,9 +78,9 @@ resource "aws_iam_group" "groups" {
 ##
 
 resource "aws_iam_user_group_membership" "group-membership" {
-  count = length(var.users)
-  user  = "${var.users[count.index]}"
-  groups = "${var.group_members[var.users[count.index]]}"
+  for_each  = var.group_members
+  user      = each.key
+  groups    = each.value
 }
 
 ##
@@ -88,22 +88,20 @@ resource "aws_iam_user_group_membership" "group-membership" {
 ##
 
 data "aws_iam_policy_document" "group-policies" {
-  count = length(var.groups)
+  for_each = var.group_permissions
   statement {
-    sid = "1"
-    actions = [
-        "sts:AssumeRole"
-    ]
-    resources = [
-      for acct_role in var.group_permissions[var.groups[count.index]]:
+    sid         = "AssumeRole"
+    actions     = [ "sts:AssumeRole" ]
+    resources   = [
+      for acct_role in each.value :
         "arn:aws:iam::${var.account_id_lookup[acct_role[0]]}:role/${acct_role[1]}"
     ]
   }
 }
 
 resource "aws_iam_group_policy" "group-policies" {
-  count = length(var.groups)
-  name = "group-policies-${count.index}"
-  group = "${var.groups[count.index]}"
-  policy = "${data.aws_iam_policy_document.group-policies[count.index].json}" 
+  for_each  = toset(var.groups)
+  name      = "group-policies-${each.key}"
+  group     = each.key
+  policy    = data.aws_iam_policy_document.group-policies[each.key].json
 }
