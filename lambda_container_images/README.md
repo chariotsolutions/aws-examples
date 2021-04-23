@@ -1,10 +1,6 @@
 An example of building and using a Lambda Container Image.
 
-**Note:** this repository is a "git forest," in which each branch is a separate project.
-If you clone the repository, you'll need to run `git checkout lambda_container_images`
-to access this project.
-
-There are three parts to this project:
+There are directories in this project:
 
 * `lambda` contains the Lambda source code, `requirements.txt`, and a Dockerfile to
   produce the container image.
