@@ -54,7 +54,7 @@ The counterpart of the deploy script is the undeploy script. This will force-del
 of the buckets and then delete the CloudFormation stack.
 
 ```
-scripts/deploy.sh STACK_NAME BASE_BUCKET_NAME
+scripts/undeploy.sh STACK_NAME BASE_BUCKET_NAME
 ```
 
 
