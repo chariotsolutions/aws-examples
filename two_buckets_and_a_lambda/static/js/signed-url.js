@@ -56,6 +56,9 @@ const signedUrlUpload = (function() {
     }
 
     return async function() {
+        console.log('foo!');
+        alert('bar');
+        
         const selectedFile = document.getElementById('fileselector').files[0];
         const url = await requestSignedUrl(selectedFile);
         const content = await loadFileContent(selectedFile);
