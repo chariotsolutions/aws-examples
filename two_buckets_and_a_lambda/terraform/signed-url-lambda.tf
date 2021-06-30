@@ -32,4 +32,10 @@ resource aws_lambda_function signed-url-lambda {
     runtime       = "python3.7"
     handler            = var.signed_url_lambda_entry_point
     filename      = "./signed-url-archive.zip"
+    environment {
+        variables = {
+            # xxx Create a variable for this in buckets.tf to avoid the repetition.
+            UPLOAD_BUCKET = "${local.upload_bucket_name_base}-uploads"
+        }
+    }
 }

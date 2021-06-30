@@ -2,8 +2,15 @@
 
 resource "aws_s3_bucket" "upload_bucket" {
   bucket = "${local.upload_bucket_name_base}-uploads"
-  acl    = "private"
+  acl    = "public-read-write"
 
+  cors_rule {
+         allowed_headers = [ "*", ]
+         allowed_methods = [ "PUT", "POST", ]
+         allowed_origins = [ "*", ]
+         expose_headers  = [ "ETag", ]
+         max_age_seconds = 0
+  }
 #  tags = {
 #    Name        = "My bucket"
 #    Environment = "Dev"
@@ -37,6 +44,7 @@ resource "aws_s3_bucket_object" "main_page" {
   source = "../static/index.html"
   acl    = "public-read"
   content_type = "text/html; charset=utf-8"
+  etag = filemd5("../static/index.html")
 }
 resource "aws_s3_bucket_object" "credentials_js" {
   bucket = aws_s3_bucket.static_bucket.id 
@@ -44,6 +52,7 @@ resource "aws_s3_bucket_object" "credentials_js" {
   source = "../static/js/credentials.js"
   acl    = "public-read"
   content_type = "text/javascript"
+  etag = filemd5("../static/js/credentials.js")
 }
 resource "aws_s3_bucket_object" "signedurl_js" {
   bucket = aws_s3_bucket.static_bucket.id 

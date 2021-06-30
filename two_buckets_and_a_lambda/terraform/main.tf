@@ -6,6 +6,9 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 3.40.0"
     }
+    # xxx To be correct, need to mention all providers here.  Terraform
+    # does it for you, but we shouldn't count on that.  I probably need
+    # the provider hashicorp/archive.
   }
 }
 

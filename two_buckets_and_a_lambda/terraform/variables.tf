@@ -7,5 +7,5 @@ variable "signed_url_lambda_name" {
 variable "signed_url_lambda_entry_point" {
     description = "The name of the function to invoke"
     type        = string
-    default     = "index.lambda_handler"
+    default     = "signed-url-lambda.lambda_handler"
 }
