@@ -1,6 +1,7 @@
 ## Declares all the buckets.
 
 resource "aws_s3_bucket" "upload_bucket" {
+# xxx throughout, don't use upload_bucket_name_base for all buckets.  Maybe just bucket_name_base?
   bucket = "${local.upload_bucket_name_base}-uploads"
   acl    = "public-read-write"
 
@@ -58,6 +59,9 @@ resource "aws_s3_bucket_object" "signedurl_js" {
   bucket = aws_s3_bucket.static_bucket.id 
   key = "js/signed-url.js"
   source = "../static/js/signed-url.js"
+  #xxx the correct approach here is not to make it public-read, but to 
+  # add an inline policy to the exec role, per KG email, which you should
+  # read up through CloudWatch.
   acl    = "public-read"
   content_type = "text/javascript"
   etag = filemd5("../static/js/signed-url.js")
