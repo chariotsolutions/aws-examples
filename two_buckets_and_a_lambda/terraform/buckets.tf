@@ -1,8 +1,11 @@
 ## Declares all the buckets.
 
+locals {
+    upload_bucket_name = "${local.bucket_name_base}-uploads"
+}
+
 resource "aws_s3_bucket" "upload_bucket" {
-# xxx throughout, don't use upload_bucket_name_base for all buckets.  Maybe just bucket_name_base?
-  bucket = "${local.upload_bucket_name_base}-uploads"
+  bucket = local.upload_bucket_name
   acl    = "public-read-write"
 
   cors_rule {
@@ -19,7 +22,7 @@ resource "aws_s3_bucket" "upload_bucket" {
 }
 
 resource "aws_s3_bucket" "archive_bucket" {
-  bucket = "${local.upload_bucket_name_base}-archive"
+  bucket = "${local.bucket_name_base}-archive"
   acl    = "private"
 
 #  tags = {
@@ -30,7 +33,7 @@ resource "aws_s3_bucket" "archive_bucket" {
 
 
 resource "aws_s3_bucket" "static_bucket" {
-  bucket = "${local.upload_bucket_name_base}-static"
+  bucket = "${local.bucket_name_base}-static"
   acl    = "private"
 
 #  tags = {

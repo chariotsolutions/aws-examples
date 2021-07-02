@@ -6,20 +6,21 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 3.40.0"
     }
-    # xxx To be correct, need to mention all providers here.  Terraform
-    # does it for you, but we shouldn't count on that.  I probably need
-    # the provider hashicorp/archive.
+    archive = {
+      source = "hashicorp/archive"
+    }
   }
 }
 
 provider "aws" {
-  region = "us-east-2"
+  region = var.aws_region
 }
 
 locals {
     aws_account_id  = data.aws_caller_identity.current.account_id
+# xxx reconcile this with the variable of the same name
     aws_region      = data.aws_region.current.name
-    upload_bucket_name_base = "com-chariotsolutions-emortontf"
+    bucket_name_base = "com-chariotsolutions-emortontf"
 }
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
