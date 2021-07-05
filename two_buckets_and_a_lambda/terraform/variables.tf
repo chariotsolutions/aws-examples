@@ -10,7 +10,3 @@ variable "signed_url_lambda_entry_point" {
     default     = "signed-url-lambda.lambda_handler"
 }
 
-variable "aws_region" {
-  type = string
-  default = "us-east-2"
-}

@@ -12,22 +12,14 @@ terraform {
   }
 }
 
-provider "aws" {
-  region = var.aws_region
-}
-
 locals {
     aws_account_id  = data.aws_caller_identity.current.account_id
-# xxx reconcile this with the variable of the same name
+# xxx figure out how to handle region correctly (emaied Keith)
     aws_region      = data.aws_region.current.name
     bucket_name_base = "com-chariotsolutions-emortontf"
 }
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
-output "utterance-from-main" {
-#  value = "Hello, World!"
-#  value = "the region is ${data.aws_region.current.name}"
-  value = "the Region is ${local.aws_region}"
-}
 

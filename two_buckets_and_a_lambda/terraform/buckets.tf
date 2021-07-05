@@ -1,7 +1,9 @@
 ## Declares all the buckets.
 
 locals {
-    upload_bucket_name = "${local.bucket_name_base}-uploads"
+    upload_bucket_name  = "${local.bucket_name_base}-uploads"
+    static_bucket_name  = "${local.bucket_name_base}-static"
+    archive_bucket_name = "${local.bucket_name_base}-archive"
 }
 
 resource "aws_s3_bucket" "upload_bucket" {
@@ -22,7 +24,7 @@ resource "aws_s3_bucket" "upload_bucket" {
 }
 
 resource "aws_s3_bucket" "archive_bucket" {
-  bucket = "${local.bucket_name_base}-archive"
+  bucket = local.archive_bucket_name
   acl    = "private"
 
 #  tags = {
@@ -33,7 +35,7 @@ resource "aws_s3_bucket" "archive_bucket" {
 
 
 resource "aws_s3_bucket" "static_bucket" {
-  bucket = "${local.bucket_name_base}-static"
+  bucket = local.static_bucket_name
   acl    = "private"
 
 #  tags = {
@@ -70,8 +72,3 @@ resource "aws_s3_bucket_object" "signedurl_js" {
   etag = filemd5("../static/js/signed-url.js")
 }
 
-output "utterance-from-buckets" {
-#  value = data.aws_region.current.name
-value = "The account id is ${data.aws_caller_identity.current.account_id}"
-# value = "the region is ${local.aws_region}"
-}
