@@ -9,7 +9,7 @@ resource aws_apigatewayv2_integration main_page {
     api_id                 = aws_apigatewayv2_api.api.id
     integration_type       = "HTTP_PROXY"
     integration_method     = "GET"
-    # xx Is the following line "interpolated enough"?  That is, are there
+    # xxkdg Is the following line "interpolated enough"?  That is, are there
     # parts of it that are hard-coded that don't need to be?
     integration_uri        = "https://${local.static_bucket_name}.s3.${local.aws_region}.amazonaws.com/index.html"
 }
@@ -18,7 +18,7 @@ resource aws_apigatewayv2_integration js {
     api_id                 = aws_apigatewayv2_api.api.id
     integration_type       = "HTTP_PROXY"
     integration_method     = "GET"
-    # xx Is the following line "interpolated enough"?  That is, are there
+    # xxkdg Is the following line "interpolated enough"?  That is, are there
     # parts of it that are hard-coded that don't need to be?
     integration_uri        = "https://${local.static_bucket_name}.s3.${local.aws_region}.amazonaws.com/js/{name}"
 }
@@ -36,7 +36,7 @@ resource "aws_lambda_permission" "api_signed_url_lambda" {
   function_name = aws_lambda_function.signed-url-lambda.function_name
   principal     = "apigateway.amazonaws.com"
 
-  # xx This works as is, but fails if we uncomment the next line.  Why?
+  # xxkdg This works as is, but fails if we uncomment the next line.  Why?
   #source_arn = aws_apigatewayv2_api.api.arn
 }
 
