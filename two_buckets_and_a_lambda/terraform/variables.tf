@@ -1,12 +1,6 @@
-variable "signed_url_lambda_name" {
-    description = "The name of the Lambda (also used for execution role)"
+variable "base_lambda_name" {
+    description = "The base for names of lambdas"
     type        = string
-    default     = "example"
-}
-
-variable "signed_url_lambda_entry_point" {
-    description = "The name of the function to invoke"
-    type        = string
-    default     = "signed-url-lambda.lambda_handler"
+    default     = "two_bucks_and_lambda"
 }
 
