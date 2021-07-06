@@ -32,8 +32,7 @@ resource "aws_lambda_permission" "api_signed_url_lambda" {
   function_name = aws_lambda_function.signed-url-lambda.function_name
   principal     = "apigateway.amazonaws.com"
 
-  # xxkdg This works as is, but fails if we uncomment the next line.  Why?
-  #source_arn = aws_apigatewayv2_api.api.arn
+  source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
 }
 
 resource aws_apigatewayv2_route main_page {
@@ -54,12 +53,17 @@ resource aws_apigatewayv2_route signed_url_lambda {
     target    = "integrations/${aws_apigatewayv2_integration.signed_url_lambda.id}"
 }
 
+resource aws_cloudwatch_log_group log_group {
+    name = "two_buckets_and_a_lambda_log_group"
+    retention_in_days = 5
+}
+
 resource aws_apigatewayv2_stage api_stage_default {
     api_id = aws_apigatewayv2_api.api.id
     name = "$default"
     auto_deploy = true
     access_log_settings {
-        destination_arn = "arn:aws:logs:${local.aws_region}:567196586496:log-group:api-gateway"
+        destination_arn = aws_cloudwatch_log_group.log_group.arn
         format          = jsonencode(
             {
               status         = "$context.status",
@@ -73,7 +77,8 @@ resource aws_apigatewayv2_stage api_stage_default {
               integration_error_status = "$context.integrationStatus",
               integration_error_message = "$context.integrationErrorMessage",
               message        = "$context.error.message",
-              messageString  = "$context.error.messageString"
+              messageString  = "$context.error.messageString",
+              context_path   = "$context.path"
             })
     }
 }
