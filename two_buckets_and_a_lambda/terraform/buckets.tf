@@ -25,36 +25,32 @@ resource "aws_s3_bucket" "archive_bucket" {
 
 }
 
-
 resource "aws_s3_bucket" "static_bucket" {
   bucket = local.static_bucket_name
   acl    = "private"
 
 }
 
-resource "aws_s3_bucket_object" "main_page" {
+resource "aws_s3_bucket_object" "whatever_static_item" {
+  # xxkdg
+  # You said to use a "for_each that's driven by a map defined as a local."
+  # I used a for_each, but deviated from your suggestion in two ways.
+  #
+  # 1) I used a set of strings, rather than a map, at least as those two terms
+  # are used on https://www.terraform.io/docs/language/meta-arguments/for_each.html .
+  # It seems like the map would be overkill, because it gives key and value, and we
+  # need only one of those.
+  # 2) I put the set of strings inside the resource definition, rather than making
+  # it a variable.  That's because the variable would make sense in only one place.
+  #
+  # Are those changes OK?
+  #
+  for_each = toset(["index.html","js/credentials.js","js/signed-url.js"])
   bucket = aws_s3_bucket.static_bucket.id
-  key = "index.html"
-  source = "../static/index.html"
-  # xxkdg For this and the other objects in the static bucket, is this acl too permissive?
+  key = each.key
+  source = "${path.module}/../static/${each.key}"
   acl    = "public-read"
   content_type = "text/html; charset=utf-8"
-  etag = filemd5("../static/index.html")
-}
-resource "aws_s3_bucket_object" "credentials_js" {
-  bucket = aws_s3_bucket.static_bucket.id 
-  key = "js/credentials.js"
-  source = "../static/js/credentials.js"
-  acl    = "public-read"
-  content_type = "text/javascript"
-  etag = filemd5("../static/js/credentials.js")
-}
-resource "aws_s3_bucket_object" "signedurl_js" {
-  bucket = aws_s3_bucket.static_bucket.id 
-  key = "js/signed-url.js"
-  source = "../static/js/signed-url.js"
-  acl    = "public-read"
-  content_type = "text/javascript"
-  etag = filemd5("../static/js/signed-url.js")
+  etag = filemd5("${path.module}/../static/${each.key}")
 }
 
