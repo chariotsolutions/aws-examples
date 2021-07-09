@@ -12,6 +12,7 @@ resource aws_lambda_function signed-url-lambda {
     runtime       = "python3.7"
     handler            = "signed-url-lambda.lambda_handler"
     filename      = "./signed-url-archive.zip"
+    source_code_hash  = "${data.archive_file.signed-url-archive.output_base64sha256}"
     environment {
         variables = {
             UPLOAD_BUCKET = local.upload_bucket_name

@@ -5,7 +5,7 @@ import urllib.parse
 
 archive_bucket = os.environ['ARCHIVE_BUCKET']
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 logger.setLevel(logging.DEBUG) 
 
 s3_client = boto3.client('s3')

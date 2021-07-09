@@ -22,13 +22,17 @@ locals {
 # the AWSXRayDaemonWriteAccess is needed only by the credentials lambda,
 # not the signed-url lambda.  So the principle of least privilege says to
 # split, but the "write fewer lines of code" principle (?!) says not to.
+#
+# xxkdg   What I wrote above about adding credentials lambda is even more
+# an issue now with processing-lambda.  Split into 3?
 resource "aws_iam_role" "lambda_execution_role" {
   name               = local.execution_role_name
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
   managed_policy_arns = [
     "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-    "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+    "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+    aws_iam_policy.read_from_upload_policy.arn
   ]
 }
 
@@ -42,5 +46,28 @@ data "aws_iam_policy_document" "lambda_trust_policy" {
       identifiers   = ["lambda.amazonaws.com"]
     }
   }
+}
+
+resource "aws_iam_policy" "read_from_upload_policy" {
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:GetObject",
+          "s3:DeleteObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+      },
+      {
+        Action = [
+          "s3:PutObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
+      },
+    ]
+  })
 }
 
