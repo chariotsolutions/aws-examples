@@ -14,7 +14,6 @@ terraform {
 
 locals {
     aws_account_id  = data.aws_caller_identity.current.account_id
-# xxx figure out how to handle region correctly (emaied Keith)
     aws_region      = data.aws_region.current.name
     bucket_name_base = "com-chariotsolutions-emortontf"
 }

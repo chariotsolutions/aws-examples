@@ -109,6 +109,3 @@ output "url-for-index-page" {
   value = aws_apigatewayv2_api.api.api_endpoint
 }
 
-output "that-string-that-is-too-long" {
-  value = aws_iam_role.lambda_execution_role.arn
-}
