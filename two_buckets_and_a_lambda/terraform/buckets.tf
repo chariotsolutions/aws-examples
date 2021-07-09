@@ -32,25 +32,16 @@ resource "aws_s3_bucket" "static_bucket" {
 }
 
 resource "aws_s3_bucket_object" "whatever_static_item" {
-  # xxkdg
-  # You said to use a "for_each that's driven by a map defined as a local."
-  # I used a for_each, but deviated from your suggestion in two ways.
-  #
-  # 1) I used a set of strings, rather than a map, at least as those two terms
-  # are used on https://www.terraform.io/docs/language/meta-arguments/for_each.html .
-  # It seems like the map would be overkill, because it gives key and value, and we
-  # need only one of those.
-  # 2) I put the set of strings inside the resource definition, rather than making
-  # it a variable.  That's because the variable would make sense in only one place.
-  #
-  # Are those changes OK?
-  #
-  for_each = toset(["index.html","js/credentials.js","js/signed-url.js"])
+  for_each = {
+      "index.html" = "text/html; charset=utf-8"
+      "js/credentials.js" = "text/javascript"
+      "js/signed-url.js" = "text/javascript"
+  }
   bucket = aws_s3_bucket.static_bucket.id
   key = each.key
   source = "${path.module}/../static/${each.key}"
   acl    = "public-read"
-  content_type = "text/html; charset=utf-8"
+  content_type = each.value
   etag = filemd5("${path.module}/../static/${each.key}")
 }
 
