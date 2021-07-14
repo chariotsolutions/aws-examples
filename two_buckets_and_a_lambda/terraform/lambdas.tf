@@ -29,11 +29,24 @@ resource aws_iam_role lambda_execution_role {
   name               = local.execution_role_name
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-    "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
-    aws_iam_policy.read_from_upload_policy.arn
-  ]
+}
+
+# xxkdg  Ditto for these attachments.  I believe that splitting
+# this one would go along with splitting the above.
+ # xxx not #s
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachment_awslambdabasicexecutionrole {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentawsxraydaemonwriteaccess {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = aws_iam_policy.read_from_upload_policy.arn
 }
 
 # xxkdg  Ditto.  I believe that splitting this one would go along with
