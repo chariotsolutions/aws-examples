@@ -1,7 +1,7 @@
 # Declares the lambda that does the "processing," which
 # consists of moving the file.
 
-data "archive_file" "processing-archive" {
+data archive_file processing-archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/processing-lambda.py"
     output_path = "${path.module}/processing-archive.zip"
@@ -23,7 +23,7 @@ resource aws_lambda_function processing-lambda {
     }
 }
 
-resource "aws_lambda_permission" "allow_upload_bucket" {
+resource aws_lambda_permission allow_upload_bucket {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.processing-lambda.arn
@@ -31,7 +31,7 @@ resource "aws_lambda_permission" "allow_upload_bucket" {
   source_arn    = aws_s3_bucket.upload_bucket.arn
 }
 
-resource "aws_s3_bucket_notification" "upload_bucket_notification" {
+resource aws_s3_bucket_notification upload_bucket_notification {
   bucket = aws_s3_bucket.upload_bucket.id
   lambda_function {
     lambda_function_arn = aws_lambda_function.processing-lambda.arn

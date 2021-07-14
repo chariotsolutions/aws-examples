@@ -37,7 +37,7 @@ resource aws_apigatewayv2_integration credentials_lambda {
     integration_uri        = aws_lambda_function.credentials-lambda.invoke_arn
 }
 
-resource "aws_lambda_permission" "api_signed_url_lambda" {
+resource aws_lambda_permission api_signed_url_lambda {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.signed-url-lambda.function_name
@@ -46,7 +46,7 @@ resource "aws_lambda_permission" "api_signed_url_lambda" {
   source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
 }
 
-resource "aws_lambda_permission" "api_credentials_lambda" {
+resource aws_lambda_permission api_credentials_lambda {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.credentials-lambda.function_name

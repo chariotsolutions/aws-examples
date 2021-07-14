@@ -1,6 +1,6 @@
 # Declares the lambda for signed-url.js.
 
-data "archive_file" "signed-url-archive" {
+data archive_file signed-url-archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/signed-url-lambda.py"
     output_path = "${path.module}/signed-url-archive.zip"

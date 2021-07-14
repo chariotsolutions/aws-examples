@@ -25,7 +25,7 @@ locals {
 #
 # xxkdg   What I wrote above about adding credentials lambda is even more
 # an issue now with processing-lambda.  Split into 3?
-resource "aws_iam_role" "lambda_execution_role" {
+resource aws_iam_role lambda_execution_role {
   name               = local.execution_role_name
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
@@ -38,7 +38,7 @@ resource "aws_iam_role" "lambda_execution_role" {
 
 # xxkdg  Ditto.  I believe that splitting this one would go along with
 # splitting the above.
-data "aws_iam_policy_document" "lambda_trust_policy" {
+data aws_iam_policy_document lambda_trust_policy {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -48,7 +48,7 @@ data "aws_iam_policy_document" "lambda_trust_policy" {
   }
 }
 
-resource "aws_iam_policy" "read_from_upload_policy" {
+resource aws_iam_policy read_from_upload_policy {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

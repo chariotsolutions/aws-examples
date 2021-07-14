@@ -2,7 +2,7 @@
 
 # xxkdg I did a separate ZIP for each of the two py files.  Shall I use
 # just one ZIP?
-data "archive_file" "credentials-archive" {
+data archive_file credentials-archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/credentials-lambda.py"
     output_path = "${path.module}/credentials-archive.zip"
@@ -41,7 +41,7 @@ resource aws_iam_role credentials-assumed-role {
   managed_policy_arns = [aws_iam_policy.upload_policy.arn]
 }
 
-resource "aws_iam_policy" "upload_policy" {
+resource aws_iam_policy upload_policy {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [

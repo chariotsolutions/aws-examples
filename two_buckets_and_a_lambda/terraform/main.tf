@@ -18,7 +18,7 @@ locals {
     bucket_name_base = "com-chariotsolutions-emortontf"
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
+data aws_caller_identity current {}
+data aws_region current {}
 
 

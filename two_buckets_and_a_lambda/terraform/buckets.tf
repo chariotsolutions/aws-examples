@@ -6,7 +6,7 @@ locals {
     archive_bucket_name = "${local.bucket_name_base}-archive"
 }
 
-resource "aws_s3_bucket" "upload_bucket" {
+resource aws_s3_bucket upload_bucket {
   bucket = local.upload_bucket_name
   acl    = "public-read-write"
 
@@ -19,19 +19,19 @@ resource "aws_s3_bucket" "upload_bucket" {
   }
 }
 
-resource "aws_s3_bucket" "archive_bucket" {
+resource aws_s3_bucket archive_bucket {
   bucket = local.archive_bucket_name
   acl    = "private"
 
 }
 
-resource "aws_s3_bucket" "static_bucket" {
+resource aws_s3_bucket static_bucket {
   bucket = local.static_bucket_name
   acl    = "private"
 
 }
 
-resource "aws_s3_bucket_object" "whatever_static_item" {
+resource aws_s3_bucket_object whatever_static_item {
   for_each = {
       "index.html" = "text/html; charset=utf-8"
       "js/credentials.js" = "text/javascript"
