@@ -1,7 +1,5 @@
 # Declares the lambda for credentials.js.
 
-# xxkdg I did a separate ZIP for each of the two py files.  Shall I use
-# just one ZIP?
 data archive_file credentials-archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/credentials-lambda.py"
