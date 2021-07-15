@@ -59,7 +59,7 @@ resource aws_iam_role_policy_attachment processing_lambda_execution_role_upload_
 
 resource aws_iam_role_policy_attachment processing_lambda_execution_role_upload_attachmentupload {
     role = aws_iam_role.processing_lambda_execution_role.name
-    policy_arn = aws_iam_policy.read_from_upload_policy.arn
+    policy_arn = aws_iam_policy.process_read_from_upload_policy.arn
 }
 
 data aws_iam_policy_document processing_lambda_trust_policy {
@@ -94,4 +94,28 @@ resource aws_iam_policy processing_lambda_read_from_upload_policy {
     ]
   })
 }
+
+resource aws_iam_policy process_read_from_upload_policy {
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:GetObject",
+          "s3:DeleteObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+      },
+      {
+        Action = [
+          "s3:PutObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
+      },
+    ]
+  })
+}
+
 

@@ -54,7 +54,7 @@ resource aws_iam_policy upload_policy {
 resource aws_iam_role lambda_execution_role {
   name               = "${var.base_lambda_name}-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
-  assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
+  assume_role_policy = data.aws_iam_policy_document.credentials_lambda_trust_policy.json
 }
 
 resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachment_awslambdabasicexecutionrole {
@@ -69,10 +69,10 @@ resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmenta
 
 resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
     role = aws_iam_role.lambda_execution_role.name
-    policy_arn = aws_iam_policy.read_from_upload_policy.arn
+    policy_arn = aws_iam_policy.credentials_read_from_upload_policy.arn
 }
 
-data aws_iam_policy_document lambda_trust_policy {
+data aws_iam_policy_document credentials_lambda_trust_policy {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -82,7 +82,7 @@ data aws_iam_policy_document lambda_trust_policy {
   }
 }
 
-resource aws_iam_policy read_from_upload_policy {
+resource aws_iam_policy credentials_read_from_upload_policy {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
