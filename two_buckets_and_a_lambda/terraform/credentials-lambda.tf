@@ -32,9 +32,6 @@ data aws_iam_policy_document role_trust_policy {
 } 
 
 resource aws_iam_role credentials-assumed-role {
-  # xxkdg Is the following line too broad?  It allows any lambda to assume 
-  # it.  Should it just allow the credentials lambda (which would require
-  # a new policy document)?
   assume_role_policy = data.aws_iam_policy_document.role_trust_policy.json
   managed_policy_arns = [aws_iam_policy.upload_policy.arn]
 }
@@ -49,6 +46,60 @@ resource aws_iam_policy upload_policy {
         ]
         Effect   = "Allow"
         Resource = [aws_s3_bucket.upload_bucket.arn]
+      },
+    ]
+  })
+}
+
+resource aws_iam_role lambda_execution_role {
+  name               = "${var.base_lambda_name}-lambda-exec-role-${local.aws_region}"
+  path               = "/lambda/"
+  assume_role_policy = data.aws_iam_policy_document.lambda_trust_policy.json
+}
+
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachment_awslambdabasicexecutionrole {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentawsxraydaemonwriteaccess {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
+    role = aws_iam_role.lambda_execution_role.name
+    policy_arn = aws_iam_policy.read_from_upload_policy.arn
+}
+
+data aws_iam_policy_document lambda_trust_policy {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type          = "Service"
+      identifiers   = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource aws_iam_policy read_from_upload_policy {
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:GetObject",
+          "s3:DeleteObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+      },
+      {
+        Action = [
+          "s3:PutObject",
+        ]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
       },
     ]
   })
