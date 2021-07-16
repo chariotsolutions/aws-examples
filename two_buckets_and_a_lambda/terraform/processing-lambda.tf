@@ -72,28 +72,28 @@ data aws_iam_policy_document processing_lambda_trust_policy {
   }
 }
 
-resource aws_iam_policy processing_lambda_read_from_upload_policy {
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "s3:GetObject",
-          "s3:DeleteObject",
-        ]
-        Effect   = "Allow"
-        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
-      },
-      {
-        Action = [
-          "s3:PutObject",
-        ]
-        Effect   = "Allow"
-        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
-      },
-    ]
-  })
-}
+#resource aws_iam_policy processing_lambda_read_from_upload_policy {
+#  policy = jsonencode({
+#    Version = "2012-10-17"
+#    Statement = [
+#      {
+#        Action = [
+#          "s3:GetObject",
+#          "s3:DeleteObject",
+#        ]
+#        Effect   = "Allow"
+#        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+#      },
+#      {
+#        Action = [
+#          "s3:PutObject",
+#        ]
+#        Effect   = "Allow"
+#        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
+#      },
+#    ]
+#  })
+#}
 
 resource aws_iam_policy process_read_from_upload_policy {
   policy = jsonencode({
