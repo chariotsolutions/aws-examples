@@ -57,7 +57,7 @@ resource aws_iam_role lambda_execution_role {
   assume_role_policy = data.aws_iam_policy_document.credentials_lambda_trust_policy.json
 }
 
-resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachment_awslambdabasicexecutionrole {
+resource aws_iam_role_policy_attachment credentials_lambda_execution_role_upload_attachment {
     role = aws_iam_role.lambda_execution_role.name
     policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
