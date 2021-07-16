@@ -34,6 +34,7 @@ resource aws_s3_bucket static_bucket {
 resource aws_s3_bucket_object whatever_static_item {
   for_each = {
       "index.html" = "text/html; charset=utf-8"
+      "favicon.ico" = "image/x-icon"
       "js/credentials.js" = "text/javascript"
       "js/signed-url.js" = "text/javascript"
   }

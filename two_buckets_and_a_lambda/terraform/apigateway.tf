@@ -16,6 +16,13 @@ resource aws_apigatewayv2_integration main_page {
     integration_uri        = "${local.static_root}/index.html"
 }
 
+resource aws_apigatewayv2_integration favicon {
+    api_id                 = aws_apigatewayv2_api.api.id
+    integration_type       = "HTTP_PROXY"
+    integration_method     = "GET"
+    integration_uri        = "${local.static_root}/favicon.ico"
+}
+
 resource aws_apigatewayv2_integration js {
     api_id                 = aws_apigatewayv2_api.api.id
     integration_type       = "HTTP_PROXY"
