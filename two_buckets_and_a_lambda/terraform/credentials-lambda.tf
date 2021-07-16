@@ -67,10 +67,10 @@ resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmenta
     policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
 }
 
-resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
-    role = aws_iam_role.lambda_execution_role.name
-    policy_arn = aws_iam_policy.credentials_read_from_upload_policy.arn
-}
+#resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
+#    role = aws_iam_role.lambda_execution_role.name
+#    policy_arn = aws_iam_policy.credentials_read_from_upload_policy.arn
+#}
 
 data aws_iam_policy_document credentials_lambda_trust_policy {
   statement {
@@ -82,26 +82,4 @@ data aws_iam_policy_document credentials_lambda_trust_policy {
   }
 }
 
-resource aws_iam_policy credentials_read_from_upload_policy {
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "s3:GetObject",
-          "s3:DeleteObject",
-        ]
-        Effect   = "Allow"
-        Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
-      },
-      {
-        Action = [
-          "s3:PutObject",
-        ]
-        Effect   = "Allow"
-        Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
-      },
-    ]
-  })
-}
 
