@@ -36,41 +36,11 @@ resource aws_iam_role credentials-assumed-role {
   managed_policy_arns = [aws_iam_policy.upload_policy.arn]
 }
 
-resource aws_iam_policy upload_policy {
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "s3:PutObject*",
-        ]
-        Effect   = "Allow"
-        Resource = [aws_s3_bucket.upload_bucket.arn]
-      },
-    ]
-  })
-}
-
 resource aws_iam_role lambda_execution_role {
   name               = "${var.base_lambda_name}-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.credentials_lambda_trust_policy.json
 }
-
-resource aws_iam_role_policy_attachment credentials_lambda_execution_role_upload_attachment {
-    role = aws_iam_role.lambda_execution_role.name
-    policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentawsxraydaemonwriteaccess {
-    role = aws_iam_role.lambda_execution_role.name
-    policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-}
-
-#resource aws_iam_role_policy_attachment lambda_execution_role_upload_attachmentupload {
-#    role = aws_iam_role.lambda_execution_role.name
-#    policy_arn = aws_iam_policy.credentials_read_from_upload_policy.arn
-#}
 
 data aws_iam_policy_document credentials_lambda_trust_policy {
   statement {
@@ -81,5 +51,4 @@ data aws_iam_policy_document credentials_lambda_trust_policy {
     }
   }
 }
-
 

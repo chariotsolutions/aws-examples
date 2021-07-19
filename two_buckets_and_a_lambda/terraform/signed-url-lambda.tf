@@ -24,6 +24,7 @@ resource aws_iam_role signed_url_lambda_execution_role {
   name               = "${var.base_lambda_name}-signed-url-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.signed_url_lambda_trust_policy.json
+  managed_policy_arns = [aws_iam_policy.upload_policy.arn]
 }
 
 data aws_iam_policy_document signed_url_lambda_trust_policy {
