@@ -37,3 +37,12 @@ data aws_iam_policy_document signed_url_lambda_trust_policy {
   }
 }
 
+resource aws_lambda_permission api_signed_url_lambda {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.signed-url-lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+
+  source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
+}
+

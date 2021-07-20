@@ -5,8 +5,38 @@ locals {
 }
 
 resource aws_apigatewayv2_api api {
-    name = "agate"
+    name = var.api_gateway_name
     protocol_type = "HTTP"
+}
+
+resource aws_apigatewayv2_route main_page {
+    api_id    = aws_apigatewayv2_api.api.id
+    route_key = "GET /"
+    target    = "integrations/${aws_apigatewayv2_integration.main_page.id}"
+}
+
+resource aws_apigatewayv2_route favicon {
+    api_id    = aws_apigatewayv2_api.api.id
+    route_key = "GET /favicon.ico"
+    target    = "integrations/${aws_apigatewayv2_integration.favicon.id}"
+}
+
+resource aws_apigatewayv2_route js {
+    api_id    = aws_apigatewayv2_api.api.id
+    route_key = "GET /js/{name}"
+    target    = "integrations/${aws_apigatewayv2_integration.js.id}"
+}
+
+resource aws_apigatewayv2_route signed_url_lambda {
+    api_id    = aws_apigatewayv2_api.api.id
+    route_key = "POST /api/signedurl"
+    target    = "integrations/${aws_apigatewayv2_integration.signed_url_lambda.id}"
+}
+
+resource aws_apigatewayv2_route credentials_lambda {
+    api_id    = aws_apigatewayv2_api.api.id
+    route_key = "POST /api/credentials"
+    target    = "integrations/${aws_apigatewayv2_integration.credentials_lambda.id}"
 }
 
 resource aws_apigatewayv2_integration main_page {
@@ -44,48 +74,6 @@ resource aws_apigatewayv2_integration credentials_lambda {
     integration_uri        = aws_lambda_function.credentials-lambda.invoke_arn
 }
 
-resource aws_lambda_permission api_signed_url_lambda {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.signed-url-lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-
-  source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
-}
-
-resource aws_lambda_permission api_credentials_lambda {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.credentials-lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-
-  source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
-}
-
-resource aws_apigatewayv2_route main_page {
-    api_id    = aws_apigatewayv2_api.api.id
-    route_key = "GET /"
-    target    = "integrations/${aws_apigatewayv2_integration.main_page.id}"
-}
-
-resource aws_apigatewayv2_route js {
-    api_id    = aws_apigatewayv2_api.api.id
-    route_key = "GET /js/{name}"
-    target    = "integrations/${aws_apigatewayv2_integration.js.id}"
-}
-
-resource aws_apigatewayv2_route signed_url_lambda {
-    api_id    = aws_apigatewayv2_api.api.id
-    route_key = "POST /api/signedurl"
-    target    = "integrations/${aws_apigatewayv2_integration.signed_url_lambda.id}"
-}
-
-resource aws_apigatewayv2_route credentials_lambda {
-    api_id    = aws_apigatewayv2_api.api.id
-    route_key = "POST /api/credentials"
-    target    = "integrations/${aws_apigatewayv2_integration.credentials_lambda.id}"
-}
-
 resource aws_cloudwatch_log_group log_group {
     name = "two_buckets_and_a_lambda_log_group"
     retention_in_days = 5
@@ -114,9 +102,5 @@ resource aws_apigatewayv2_stage api_stage_default {
               context_path   = "$context.path"
             })
     }
-}
-
-output "url-for-index-page" {
-  value = aws_apigatewayv2_api.api.api_endpoint
 }
 

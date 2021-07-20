@@ -4,3 +4,9 @@ variable "base_lambda_name" {
     default     = "two_bucks_and_lambda"
 }
 
+variable "api_gateway_name" {
+    description = "The name for the API Gateway"
+    type        = string
+    default     = "agate"
+}
+
