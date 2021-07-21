@@ -8,7 +8,7 @@ data archive_file processing-archive {
 }
 
 resource aws_lambda_function processing-lambda {
-    function_name = "${var.base_lambda_name}-processing-lambda-function"
+    function_name = "${var.base_lambda_name}-processing"
     role          = aws_iam_role.processing_lambda_execution_role.arn
     runtime       = "python3.7"
     handler            = "processing-lambda.lambda_handler"

@@ -8,7 +8,7 @@ locals {
 
 resource aws_s3_bucket upload_bucket {
   bucket = local.upload_bucket_name
-  acl    = "public-read"
+  acl    = "private"
 
   cors_rule {
          allowed_headers = [ "*", ]
@@ -31,7 +31,7 @@ resource aws_s3_bucket static_bucket {
 
 }
 
-resource aws_s3_bucket_object whatever_static_item {
+resource aws_s3_bucket_object static_item {
   for_each = {
       "index.html" = "text/html; charset=utf-8"
       "favicon.ico" = "image/x-icon"

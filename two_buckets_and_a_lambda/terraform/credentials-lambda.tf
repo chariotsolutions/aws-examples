@@ -7,8 +7,8 @@ data archive_file credentials-archive {
 }
 
 resource aws_lambda_function credentials-lambda {
-    function_name = "${var.base_lambda_name}-credentials-lambda-function"
-    role          = aws_iam_role.lambda_execution_role.arn
+    function_name = "${var.base_lambda_name}-credentials"
+    role          = aws_iam_role.credentials_lambda_execution_role.arn
     runtime       = "python3.7"
     handler            = "credentials-lambda.lambda_handler"
     filename      = "./credentials-archive.zip"
@@ -26,7 +26,7 @@ data aws_iam_policy_document role_trust_policy {
     actions = ["sts:AssumeRole"]
     principals {
         type      = "AWS"
-        identifiers = [aws_iam_role.lambda_execution_role.arn]
+        identifiers = [aws_iam_role.credentials_lambda_execution_role.arn]
     }
   }
 } 
@@ -36,7 +36,7 @@ resource aws_iam_role credentials-assumed-role {
   managed_policy_arns = [aws_iam_policy.upload_policy.arn]
 }
 
-resource aws_iam_role lambda_execution_role {
+resource aws_iam_role credentials_lambda_execution_role {
   name               = "${var.base_lambda_name}-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.credentials_lambda_trust_policy.json
