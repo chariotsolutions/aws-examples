@@ -21,21 +21,6 @@ resource aws_lambda_function credentials-lambda {
     }
 }
 
-data aws_iam_policy_document role_trust_policy {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-        type      = "AWS"
-        identifiers = [aws_iam_role.credentials_lambda_execution_role.arn]
-    }
-  }
-} 
-
-resource aws_iam_role credentials-assumed-role {
-  assume_role_policy = data.aws_iam_policy_document.role_trust_policy.json
-  managed_policy_arns = [aws_iam_policy.upload_policy.arn]
-}
-
 resource aws_iam_role credentials_lambda_execution_role {
   name               = "${var.base_lambda_name}-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
@@ -61,3 +46,34 @@ resource aws_lambda_permission api_credentials_lambda {
   source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"
 }
 
+# Data/resources for the assumed role.
+
+data aws_iam_policy_document credentials-assumed-role-trust-policy {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+        type      = "AWS"
+        identifiers = [aws_iam_role.credentials_lambda_execution_role.arn]
+    }
+  }
+} 
+
+resource aws_iam_role credentials-assumed-role {
+  assume_role_policy = data.aws_iam_policy_document.credentials-assumed-role-trust-policy.json
+  inline_policy {
+    # Commenting out the next line produces no error, but breaks the demo.
+    name = "anameisrequired"
+    policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Action = [
+              "s3:PutObject*",
+            ]
+            Effect   = "Allow"
+            Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+          },
+        ]
+      })
+    }
+}
