@@ -23,7 +23,7 @@ resource aws_lambda_function signed-url-lambda {
 resource aws_iam_role signed_url_lambda_execution_role {
   name               = "${var.base_lambda_name}-signed-url-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
-  assume_role_policy = data.aws_iam_policy_document.signed_url_lambda_trust_policy.json
+  assume_role_policy = data.aws_iam_policy_document.signed_url_exec_role_lambda_trust_policy.json
   inline_policy {
     # Commenting out the next line produces no error, but breaks the demo.  xxkdg any thought?
     name = "anameisrequired"
@@ -42,7 +42,12 @@ resource aws_iam_role signed_url_lambda_execution_role {
   }
 }
 
-data aws_iam_policy_document signed_url_lambda_trust_policy {
+resource aws_iam_role_policy_attachment signed_url_basic_lambda {
+    role = aws_iam_role.signed_url_lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data aws_iam_policy_document signed_url_exec_role_lambda_trust_policy {
   statement {
     actions = ["sts:AssumeRole"]
     principals {

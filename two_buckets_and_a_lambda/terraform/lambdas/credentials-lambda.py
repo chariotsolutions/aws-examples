@@ -19,8 +19,7 @@ def lambda_handler(event, context):
     #     two_bucks_and_lambda-credentials-lambda-function-b63c1e05-a4eb-494a-8219-c56e88eabef7
     # That is more than 80 characters long.  The max permitted is 64.  So we used something shorter.
     #session_name = f"{context.function_name}-{context.aws_request_id}"
-    session_name = f"kumquat-{context.aws_request_id}"
-    # xxkdg   Will this still be unique?  Is there an easy alternative, e.g. with a name like get_unique_id()?  Should we switch to a different fruit?
+    session_name = f"{context.aws_request_id}"
     session_policy = {
         'Version': '2012-10-17',
         'Statement': [

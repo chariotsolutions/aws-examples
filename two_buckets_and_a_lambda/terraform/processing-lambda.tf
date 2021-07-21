@@ -11,7 +11,7 @@ resource aws_lambda_function processing-lambda {
     function_name = "${var.base_lambda_name}-processing"
     role          = aws_iam_role.processing_lambda_execution_role.arn
     runtime       = "python3.7"
-    handler            = "processing-lambda.lambda_handler"
+    handler       = "processing-lambda.lambda_handler"
     filename      = "./processing-archive.zip"
     source_code_hash  = "${data.archive_file.processing-archive.output_base64sha256}"
     environment {
@@ -23,7 +23,7 @@ resource aws_lambda_function processing-lambda {
     }
 }
 
-resource aws_lambda_permission allow_upload_bucket {
+resource aws_lambda_permission upload_bucket_lambda_invocation {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.processing-lambda.arn
@@ -38,26 +38,31 @@ resource aws_s3_bucket_notification upload_bucket_notification {
     events              = ["s3:ObjectCreated:*"]
   }
 
-  depends_on = [aws_lambda_permission.allow_upload_bucket]
+  depends_on = [aws_lambda_permission.upload_bucket_lambda_invocation]
 }
 
 resource aws_iam_role processing_lambda_execution_role {
   name               = "${var.base_lambda_name}-processing-lambda-exec-role-${local.aws_region}"
   path               = "/lambda/"
-  assume_role_policy = data.aws_iam_policy_document.processing_lambda_trust_policy.json
+  assume_role_policy = data.aws_iam_policy_document.processing_exec_role_lambda_trust_policy.json
 }
 
-resource aws_iam_role_policy_attachment processing_lambda_execution_role_upload_attachmentawsxraydaemonwriteaccess {
+resource aws_iam_role_policy_attachment processing_lambda_write {
     role = aws_iam_role.processing_lambda_execution_role.name
     policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
 }
 
-resource aws_iam_role_policy_attachment processing_lambda_execution_role_upload_attachmentupload {
+resource aws_iam_role_policy_attachment processing_lambda_upload {
     role = aws_iam_role.processing_lambda_execution_role.name
     policy_arn = aws_iam_policy.process_read_from_upload_policy.arn
 }
 
-data aws_iam_policy_document processing_lambda_trust_policy {
+resource aws_iam_role_policy_attachment processing_basic_lambda {
+    role = aws_iam_role.processing_lambda_execution_role.name
+    policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data aws_iam_policy_document processing_exec_role_lambda_trust_policy {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
