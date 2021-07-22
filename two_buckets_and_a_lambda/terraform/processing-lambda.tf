@@ -1,19 +1,19 @@
 # Declares the lambda that does the "processing," which
 # consists of moving the file.
 
-data archive_file processing-archive {
+data archive_file processing_archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/processing-lambda.py"
-    output_path = "${path.module}/processing-archive.zip"
+    output_path = "${path.module}/processing_archive.zip"
 }
 
-resource aws_lambda_function processing-lambda {
+resource aws_lambda_function processing_lambda {
     function_name = "${var.base_lambda_name}-processing"
     role          = aws_iam_role.processing_lambda_execution_role.arn
     runtime       = "python3.7"
     handler       = "processing-lambda.lambda_handler"
-    filename      = "./processing-archive.zip"
-    source_code_hash  = "${data.archive_file.processing-archive.output_base64sha256}"
+    filename      = "./processing_archive.zip"
+    source_code_hash  = "${data.archive_file.processing_archive.output_base64sha256}"
     environment {
         variables = {
             # Requires only the archive bucket name.  The upload
@@ -26,7 +26,7 @@ resource aws_lambda_function processing-lambda {
 resource aws_lambda_permission upload_bucket_lambda_invocation {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.processing-lambda.arn
+  function_name = aws_lambda_function.processing_lambda.arn
   principal     = "s3.amazonaws.com"
   source_arn    = aws_s3_bucket.upload_bucket.arn
 }
@@ -34,7 +34,7 @@ resource aws_lambda_permission upload_bucket_lambda_invocation {
 resource aws_s3_bucket_notification upload_bucket_notification {
   bucket = aws_s3_bucket.upload_bucket.id
   lambda_function {
-    lambda_function_arn = aws_lambda_function.processing-lambda.arn
+    lambda_function_arn = aws_lambda_function.processing_lambda.arn
     events              = ["s3:ObjectCreated:*"]
   }
 
@@ -42,7 +42,7 @@ resource aws_s3_bucket_notification upload_bucket_notification {
 }
 
 resource aws_iam_role processing_lambda_execution_role {
-  name               = "${var.base_lambda_name}-processing-lambda-exec-role-${local.aws_region}"
+  name               = "${var.base_lambda_name}-processing_lambda_exec_role-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.processing_exec_role_lambda_trust_policy.json
 }

@@ -1,18 +1,18 @@
 # Declares the lambda for credentials.js.
 
-data archive_file credentials-archive {
+data archive_file credentials_archive {
     type        = "zip"
     source_file = "${path.module}/lambdas/credentials-lambda.py"
-    output_path = "${path.module}/credentials-archive.zip"
+    output_path = "${path.module}/credentials_archive.zip"
 }
 
-resource aws_lambda_function credentials-lambda {
+resource aws_lambda_function credentials_lambda {
     function_name = "${var.base_lambda_name}-credentials"
     role          = aws_iam_role.credentials_lambda_execution_role.arn
     runtime       = "python3.7"
     handler            = "credentials-lambda.lambda_handler"
-    filename      = "./credentials-archive.zip"
-    source_code_hash  = "${data.archive_file.credentials-archive.output_base64sha256}"
+    filename      = "./credentials_archive.zip"
+    source_code_hash  = "${data.archive_file.credentials_archive.output_base64sha256}"
     environment {
         variables = {
             UPLOAD_BUCKET = local.upload_bucket_name
@@ -45,7 +45,7 @@ data aws_iam_policy_document credentials_exec_role_lambda_trust_policy {
 resource aws_lambda_permission api_credentials_lambda {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.credentials-lambda.function_name
+  function_name = aws_lambda_function.credentials_lambda.function_name
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "${aws_apigatewayv2_api.api.execution_arn}/*/*/*"

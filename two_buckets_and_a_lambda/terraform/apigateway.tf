@@ -64,14 +64,14 @@ resource aws_apigatewayv2_integration signed_url_lambda {
     api_id                 = aws_apigatewayv2_api.api.id
     integration_type       = "AWS_PROXY"
     integration_method     = "POST"
-    integration_uri        = aws_lambda_function.signed-url-lambda.invoke_arn
+    integration_uri        = aws_lambda_function.signed_url_lambda.invoke_arn
 }
 
 resource aws_apigatewayv2_integration credentials_lambda {
     api_id                 = aws_apigatewayv2_api.api.id
     integration_type       = "AWS_PROXY"
     integration_method     = "POST"
-    integration_uri        = aws_lambda_function.credentials-lambda.invoke_arn
+    integration_uri        = aws_lambda_function.credentials_lambda.invoke_arn
 }
 
 resource aws_cloudwatch_log_group log_group {
