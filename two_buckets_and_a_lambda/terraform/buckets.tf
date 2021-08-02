@@ -1,9 +1,9 @@
 ## Declares all the buckets.
 
 locals {
-    upload_bucket_name  = "${local.bucket_name_base}-uploads"
-    static_bucket_name  = "${local.bucket_name_base}-static"
-    archive_bucket_name = "${local.bucket_name_base}-archive"
+    upload_bucket_name  = "${var.bucket_name_base}-uploads"
+    static_bucket_name  = "${var.bucket_name_base}-static"
+    archive_bucket_name = "${var.bucket_name_base}-archive"
 }
 
 resource aws_s3_bucket upload_bucket {
