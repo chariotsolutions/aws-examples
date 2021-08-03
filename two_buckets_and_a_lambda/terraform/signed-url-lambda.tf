@@ -18,11 +18,10 @@ resource aws_lambda_function signed_url_lambda {
             UPLOAD_BUCKET = local.upload_bucket_name
         }
     }
-    depends_on    = [ aws_cloudwatch_log_group.signed_url_lambda_log_group ]
 }
 
 resource aws_cloudwatch_log_group signed_url_lambda_log_group {
-    name              = "/aws/lambda/${local.base_lambda_name}_signed_url_returns"
+    name              = "/aws/lambda/${aws_lambda_function.signed_url_lambda.function_name}"
     retention_in_days = 7
 }
 

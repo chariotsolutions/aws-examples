@@ -50,7 +50,7 @@ resource aws_apigatewayv2_integration credentials_lambda {
 
 resource aws_cloudwatch_log_group log_group {
     name = "/apigateway/${var.api_gateway_name}_access"
-    retention_in_days = 5
+    retention_in_days = 7
 }
 
 resource aws_apigatewayv2_stage api_stage_default {

@@ -21,6 +21,11 @@ resource aws_lambda_function credentials_lambda {
     }
 }
 
+resource aws_cloudwatch_log_group credentials_lambda_log_group {
+    name              = "/aws/lambda/${aws_lambda_function.credentials_lambda.function_name}"
+    retention_in_days = 7
+}
+
 resource aws_iam_role credentials_lambda_execution_role {
   name               = "${local.base_lambda_name}_lambda_exec_role_${local.aws_region}"
   path               = "/lambda/"

@@ -23,6 +23,11 @@ resource aws_lambda_function processing_lambda {
     }
 }
 
+resource aws_cloudwatch_log_group processing_log_group {
+    name              = "/aws/lambda/${aws_lambda_function.processing_lambda.function_name}"
+    retention_in_days = 7
+}
+
 resource aws_lambda_permission upload_bucket_lambda_invocation {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
