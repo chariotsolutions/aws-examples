@@ -7,6 +7,5 @@ variable api_gateway_name {
 variable bucket_name_base {
     description = "All the bucket names will start with this"
     type = string
-    default = "com-chariotsolutions-emortontf"
 }
 

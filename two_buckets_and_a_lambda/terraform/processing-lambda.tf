@@ -51,7 +51,7 @@ resource aws_iam_role processing_lambda_execution_role {
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.processing_exec_role_lambda_trust_policy.json
   inline_policy {
-    # Commenting out the next line produces no error, but breaks the demo.
+    # Change to match CloudFormation.
     name = "anameisrequired"
     policy = jsonencode({
         Version = "2012-10-17"

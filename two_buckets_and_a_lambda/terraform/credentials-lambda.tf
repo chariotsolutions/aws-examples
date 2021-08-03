@@ -71,7 +71,7 @@ data aws_iam_policy_document credentials_assumed_role_trust_policy {
 resource aws_iam_role credentials_assumed_role {
   assume_role_policy = data.aws_iam_policy_document.credentials_assumed_role_trust_policy.json
   inline_policy {
-    # Commenting out the next line produces no error, but breaks the demo.
+    # change to match CloudFormation
     name = "anameisrequired"
     policy = jsonencode({
         Version = "2012-10-17"
