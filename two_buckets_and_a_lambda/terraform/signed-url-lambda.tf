@@ -7,7 +7,7 @@ data archive_file signed_url_archive {
 }
 
 resource aws_lambda_function signed_url_lambda {
-    function_name = "${var.base_lambda_name}_signed_url"
+    function_name = "${local.base_lambda_name}_signed_url"
     role          = aws_iam_role.signed_url_lambda_execution_role.arn
     runtime       = "python3.7"
     handler            = "signed-url-lambda.lambda_handler"
@@ -18,10 +18,16 @@ resource aws_lambda_function signed_url_lambda {
             UPLOAD_BUCKET = local.upload_bucket_name
         }
     }
+    depends_on    = [ aws_cloudwatch_log_group.signed_url_lambda_log_group ]
+}
+
+resource aws_cloudwatch_log_group signed_url_lambda_log_group {
+    name              = "/aws/lambda/${local.base_lambda_name}_signed_url_returns"
+    retention_in_days = 7
 }
 
 resource aws_iam_role signed_url_lambda_execution_role {
-  name               = "${var.base_lambda_name}_signed_url_lambda_exec_role_${local.aws_region}"
+  name               = "${local.base_lambda_name}_signed_url_lambda_exec_role_${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.signed_url_exec_role_lambda_trust_policy.json
   inline_policy {

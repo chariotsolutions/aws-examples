@@ -7,7 +7,7 @@ data archive_file credentials_archive {
 }
 
 resource aws_lambda_function credentials_lambda {
-    function_name = "${var.base_lambda_name}_credentials"
+    function_name = "${local.base_lambda_name}_credentials"
     role          = aws_iam_role.credentials_lambda_execution_role.arn
     runtime       = "python3.7"
     handler            = "credentials-lambda.lambda_handler"
@@ -22,7 +22,7 @@ resource aws_lambda_function credentials_lambda {
 }
 
 resource aws_iam_role credentials_lambda_execution_role {
-  name               = "${var.base_lambda_name}_lambda_exec_role_${local.aws_region}"
+  name               = "${local.base_lambda_name}_lambda_exec_role_${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.credentials_exec_role_lambda_trust_policy.json
 }

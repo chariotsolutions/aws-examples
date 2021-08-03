@@ -8,7 +8,7 @@ data archive_file processing_archive {
 }
 
 resource aws_lambda_function processing_lambda {
-    function_name = "${var.base_lambda_name}_processing"
+    function_name = "${local.base_lambda_name}_processing"
     role          = aws_iam_role.processing_lambda_execution_role.arn
     runtime       = "python3.7"
     handler       = "processing-lambda.lambda_handler"
@@ -42,19 +42,38 @@ resource aws_s3_bucket_notification upload_bucket_notification {
 }
 
 resource aws_iam_role processing_lambda_execution_role {
-  name               = "${var.base_lambda_name}_processing_lambda_exec_role_${local.aws_region}"
+  name               = "${local.base_lambda_name}_processing_lambda_exec_role_${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.processing_exec_role_lambda_trust_policy.json
+  inline_policy {
+    # Commenting out the next line produces no error, but breaks the demo.
+    name = "anameisrequired"
+    policy = jsonencode({
+        Version = "2012-10-17"
+	    Statement = [
+	      {
+		Action = [
+		  "s3:GetObject",
+		  "s3:DeleteObject",
+		]
+		Effect   = "Allow"
+		Resource = ["${aws_s3_bucket.upload_bucket.arn}/*"]
+	      },
+	      {
+		Action = [
+		  "s3:PutObject",
+		]
+		Effect   = "Allow"
+		Resource = ["${aws_s3_bucket.archive_bucket.arn}/*"]
+	      },
+	    ]
+	  })
+    }
 }
 
 resource aws_iam_role_policy_attachment processing_lambda_write {
     role = aws_iam_role.processing_lambda_execution_role.name
     policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-}
-
-resource aws_iam_role_policy_attachment processing_lambda_upload {
-    role = aws_iam_role.processing_lambda_execution_role.name
-    policy_arn = aws_iam_policy.process_read_from_upload_policy.arn
 }
 
 resource aws_iam_role_policy_attachment processing_basic_lambda {

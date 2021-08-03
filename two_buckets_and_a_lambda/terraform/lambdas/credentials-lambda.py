@@ -15,10 +15,6 @@ def lambda_handler(event, context):
     body = json.loads(event['body'])
     key = body['key']
 
-    # The old code to assign session_name, now commented out, produced long session names like
-    #     two_bucks_and_lambda-credentials-lambda-function-b63c1e05-a4eb-494a-8219-c56e88eabef7
-    # That is more than 80 characters long.  The max permitted is 64.  So we used something shorter.
-    #session_name = f"{context.function_name}-{context.aws_request_id}"
     session_name = f"{context.aws_request_id}"
     session_policy = {
         'Version': '2012-10-17',

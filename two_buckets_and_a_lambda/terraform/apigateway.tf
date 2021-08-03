@@ -9,12 +9,6 @@ resource aws_apigatewayv2_api api {
     protocol_type = "HTTP"
 }
 
-resource aws_apigatewayv2_route main_page {
-    api_id    = aws_apigatewayv2_api.api.id
-    route_key = "GET /"
-    target    = "integrations/${aws_apigatewayv2_integration.main_page.id}"
-}
-
 resource aws_apigatewayv2_route static_file {
     api_id    = aws_apigatewayv2_api.api.id
     route_key = "GET /{proxy+}"
@@ -31,13 +25,6 @@ resource aws_apigatewayv2_route credentials_lambda {
     api_id    = aws_apigatewayv2_api.api.id
     route_key = "POST /api/credentials"
     target    = "integrations/${aws_apigatewayv2_integration.credentials_lambda.id}"
-}
-
-resource aws_apigatewayv2_integration main_page {
-    api_id                 = aws_apigatewayv2_api.api.id
-    integration_type       = "HTTP_PROXY"
-    integration_method     = "GET"
-    integration_uri        = "${local.static_root}/index.html"
 }
 
 resource aws_apigatewayv2_integration static_file {
@@ -62,7 +49,7 @@ resource aws_apigatewayv2_integration credentials_lambda {
 }
 
 resource aws_cloudwatch_log_group log_group {
-    name = "two_buckets_and_a_lambda_log_group"
+    name = "/apigateway/${var.api_gateway_name}_access"
     retention_in_days = 5
 }
 
