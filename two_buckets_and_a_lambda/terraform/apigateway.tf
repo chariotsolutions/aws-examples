@@ -5,7 +5,7 @@ locals {
 }
 
 resource aws_apigatewayv2_api api {
-    name = var.api_gateway_name
+    name = var.name_base
     protocol_type = "HTTP"
 }
 
@@ -49,7 +49,7 @@ resource aws_apigatewayv2_integration credentials_lambda {
 }
 
 resource aws_cloudwatch_log_group log_group {
-    name = "/apigateway/${var.api_gateway_name}_access"
+    name = "/apigateway/${var.name_base}_access"
     retention_in_days = 7
 }
 
