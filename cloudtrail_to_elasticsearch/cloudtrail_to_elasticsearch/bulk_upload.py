@@ -23,8 +23,8 @@
 
 import sys
 
-import processor
-from s3_helper import S3Helper
+import cloudtrail_to_elasticsearch.processor
+from cloudtrail_to_elasticsearch.s3_helper import S3Helper
 
 
 if len(sys.argv) != 3:

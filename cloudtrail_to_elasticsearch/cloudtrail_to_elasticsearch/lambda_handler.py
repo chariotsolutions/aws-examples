@@ -17,9 +17,9 @@
 """ Lambda function to upload CloudTrail events to Elasticsearch
 """
 
-import processor
+import cloudtrail_to_elasticsearch.processor
 
-px = processor.create()
+px = cloudtrail_to_elasticsearch.processor.create()
 
 def lambda_handler(event, context):
     for record in event.get('Records', []):

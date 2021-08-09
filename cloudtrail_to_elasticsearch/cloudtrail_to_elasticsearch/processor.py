@@ -20,8 +20,8 @@ import os
 import re
 import sys
 
-from es_helper import ESHelper
-from s3_helper import S3Helper
+from cloudtrail_to_elasticsearch.es_helper import ESHelper
+from cloudtrail_to_elasticsearch.s3_helper import S3Helper
 
 
 # the index configuration that we'll use
