@@ -15,6 +15,11 @@
 # limitations under the License.
 ################################################################################
 
+""" This is the main logic module. It relies on external classes to read files
+    from S3 and write events to Elasticsearch.
+    """
+
+
 import json
 import os
 import re

@@ -14,8 +14,10 @@
 # limitations under the License.
 ################################################################################
 
-""" Lambda function to upload CloudTrail events to Elasticsearch
-"""
+""" Lambda function to upload CloudTrail events to Elasticsearch. This module
+    decomposes the event and calls the processor module to do all the work.
+    """
+
 
 import cloudtrail_to_elasticsearch.processor
 
