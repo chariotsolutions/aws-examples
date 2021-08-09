@@ -1,4 +1,4 @@
-.PHONY: default deploy package init clean
+.PHONY: default deploy package test quicktest init clean
 
 LAMBDA_NAME     ?= CloudTrail_to_Elasticsearch
 
@@ -12,11 +12,16 @@ default: package
 deploy: package
 	aws lambda update-function-code --function-name $(LAMBDA_NAME) --zip-file fileb://${DEPLOY_DIR}/${ARTIFACT}
 
-package: init
+package: test
 	poetry build
 	mkdir -p package
 	poetry run pip install --upgrade -t ${BUILD_DIR} ${POETRY_DIST_DIR}/*.whl
 	cd $(BUILD_DIR) ; zip -r ${DEPLOY_DIR}/${ARTIFACT} . -x '*.pyc'
+
+test:	init quicktest
+
+quicktest:
+	poetry run python -m unittest discover -s tests
 
 init:
 	poetry install

@@ -21,7 +21,7 @@ import cloudtrail_to_elasticsearch.processor
 
 px = cloudtrail_to_elasticsearch.processor.create()
 
-def lambda_handler(event, context):
+def handle(event, context):
     for record in event.get('Records', []):
         eventName = record['eventName']
         bucket = record['s3']['bucket']['name']

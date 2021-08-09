@@ -133,11 +133,9 @@ Resources:
       Description:                      "Reacts to CloudTrail files being stored on S3 by uploading them to Elasticsearch"
       Role:                             !GetAtt LambdaRole.Arn
       Runtime:                          "python3.7"
-      Handler:                          "index.lambda_handler"
+      Handler:                          "cloudtrail_to_elasticsearch.lambda_handler.handle"
       Code: 
-        ZipFile:                        |
-                                        def lambda_handler(event, context):
-                                            raise "this is a dummy handler; please build and upload the real handler"
+        ZipFile:                        "# this is an invalid file, used as a placeholder in the CloudFormation script"
       MemorySize:                       512
       Timeout:                          60
       Environment: 
