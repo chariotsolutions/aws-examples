@@ -100,7 +100,7 @@ class Processor:
 ## reason to wrap them in an object: they're simple imperative functions,
 ## without collaborators
 
-FILENAME_REGEX = re.compile(r'.*CloudTrail/[^/]+/(\d{4})/(\d{2})/\d{2}/.*')
+FILENAME_REGEX = re.compile(r'.*_(\d{4})(\d{2})\d{2}T\d{4}Z_\w+.json.gz')
 
 def index_name(key):
     match = FILENAME_REGEX.match(key)
