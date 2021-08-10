@@ -13,7 +13,7 @@ Parameters:
     Type:                               "String"
     Default:                            ""
 
-  CloudTrailKey:
+  CloudTrailPrefix:
     Description:                        "The path in that bucket for new CloudTrail event files, with trailing slash"
     Type:                               "String"
     Default:                            ""
@@ -115,7 +115,7 @@ Resources:
               Effect:                   "Allow"
               Action:
                 -                       "s3:GetObject"
-              Resource:                 [ !Sub "arn:aws:s3:::${CloudTrailBucket}/${CloudTrailKey}*" ]
+              Resource:                 [ !Sub "arn:aws:s3:::${CloudTrailBucket}/${CloudTrailPrefix}*" ]
         -
           PolicyName:                   "WriteToDestination"
           PolicyDocument:
