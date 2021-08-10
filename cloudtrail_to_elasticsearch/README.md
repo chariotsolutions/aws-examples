@@ -4,29 +4,168 @@ into an Elasticsearch cluster.
 
 # Warnings and Caveats
 
-You will incur charges for the Elasticsearch cluster and Lambda invocations, as well as
-for S3 storage of the raw CloudTrail events. The provided CloudFormation template
+You will incur charges for the Elasticsearch cluster and Lambda invocations, as well
+as for S3 storage of the raw CloudTrail events. The provided CloudFormation template
 creates a stack using a single `t2.medium.elasticsearch` instance and 32 GB of disk. 
 This costs $1.75 per day plus storage charges of $0.32/month.
 
-Elasticsearch does not automatically clean up its indexes. You can use the cleanup Lambda
-described [here](https://github.com/kdgregory/aws-misc/tree/master/lambda/es-cleanup-signed)
-to maintain a constant number of indexes. As configured, the Lambda creates one index for
-each month of data.  How many indexes you can support will depend on your API volume and the
-size of the cluster.
+AWS Managed Elasticsearch does not automatically clean up its indexes. You can use the
+cleanup Lambda [here](https://github.com/kdgregory/aws-misc/tree/master/lambda/es-cleanup-signed)
+to maintain a constant number of indexes. As configured, the Lambda creates one index
+for each month of data.  How many indexes you can support will depend on your AWS API
+volume and the size of the cluster.
 
 Deleting the Lambda function -- either manually or by deleting the CloudFormation stack --
 does _not_ delete the event trigger. You must explicitly delete it by going to the S3
 bucket, clicking "Events" under the "Properties" tab, and then deleting the notification.
 
 
+# Building and Deploying
+
+This project consists of a single Lambda, written in Python. It has multiple modules,
+and uses the third-party [`requests`](https://pypi.org/project/requests/) and
+[`aws-requests-auth`](https://pypi.org/project/aws-requests-auth/) libraries to access
+Elasticsearch.
+
+The easiest way to build is with `make`, and there are two Makefiles:
+
+* `Makefile.pip` uses `pip` to install the external dependencies.
+
+* `Makefile.poetry` uses [Poetry](https://python-poetry.org/) for dependency management.
+  In my opinion Poetry is preferable to `pip` because it also provides a virtual environment
+  for running tests or the REPL.
+
+Other than the way that these Makefiles manage dependencies they are identical, and provide
+the following targets (the first four are shown in dependency order; the last two do not
+have dependencies):
+
+* `init` installs the third-party libraries.
+
+* `test` runs tests. At this time the tests are minimal, intended to demonstrate the build
+  process rather than exercise the code.
+
+* `package` creates the Lambda deployment bundle
+
+* `deploy` uses the AWS CLI to upload the Lambda deployment bundle.
+
+* `quicktest` runs tests without invoking the `init` dependency. This allows fast turnaround
+  time when you are actively modifying the code.
+
+* `clean` deletes the deployment bundle and all working directories. It does _not_ delete the
+  Poetry virtual environment.
+
+Deploying is a multi-step process:
+
+1. Enable CloudTrail.
+
+   For this example, I'm going to assume that you already have CloudTrail enabled,
+   and an S3 bucket configured to accept its output. While it would simplify the
+   example if my CloudFormation script created the trail and bucket, it would put
+   me in the position of either delivering an insecure and incomplete solution, or
+   one that could not easily be torn down.
+
+   Here are some things to consider when creating your own trail:
+
+   * Use a dedicated bucket.
+
+   * Use server-side encryption on this bucket.
+
+   * Enable [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
+     on that bucket, to ensure that an intruder can't delete the trails that show their activity.
+     Note that there are two type of Object Lock, and the "governance mode" locks can be overridden.
+     To ensure that an attacker cannot delete CloudTrail logs, you need to use a "legal hold," which
+     does not permit _any_ deletion of an object within its retention period (as such, you may want
+     to limit the retention period, especially if this is the first time that you've set up CloudTrail).
+
+   * Create a cross-region trail. By default, CloudTrail only records events from the _current_ region.
+     You want to capture _all_ of the events for your account.
+
+   * If you're in an organization, create the bucket and trail in the organization root account, and
+     enable for all child accounts.
+
+2. Create the Elasticsearch cluster and Lambda
+
+   The [provided CloudFormation template](cloudformation.yml) will create the Elasticsearch cluster
+   and Lambda outside a VPC. This template has several parameters, most of which are optional:
+
+    * `LambdaName`:
+      (optional) The name of the Lambda function. This is also used to name the function's
+      execution role. Default: `CloudTrail_to_Elasticsearch`.
+
+    * `CloudTrailBucket`:
+      The name of the S3 bucket where CloudTrail is saving event logs. No default.
+
+    * `CloudTrailPrefix`:
+      (optional) The prefix within this bucket for the log files. Yes, this goes against my
+      recommendation above for a dedicated bucket, but the real world sometimes has different
+      ideas. If used, you must include the trailing slash on this value (eg, "cloudtrail/",
+      not "cloudtrail").
+
+    * `ElasticsearchDomainName`:
+      (optional) The domain name for the Elasticsearch cluster. This must comply with DNS naming
+      rules (ie, lowercase and with hyphens but no underscores). Default: `cloudtrail-events`.
+
+    * `ElasticsearchInstanceType`:
+      (optional) The type of instance to use for the Elasticsearch cluster. The default is
+      `t2.medium.elasticsearch`, which is sufficient for a few million events per month, but
+      may need to be increased if you're in a high-activity organization.
+
+    * `ElasticsearchStorageSize`:
+      (optional) The size of the storage volume, in gigabytes. The maximum size depends on the
+      selected instance type; the default is 32.
+      
+    * `AllowedIPs`:
+      (optional) Used to construct a permissions policy for the Elasticsearch cluster that
+      allows access from browsers. You should specify the public IP address of your local
+      network, which you can find by Googleing for "what's my IP". If you have multiple public
+      IP addresses, list them all, separated by a comma. No default.
+
+   One of the annoying things about CloudFormation is that the `AWS::Lambda::Function` resource
+   can either specify the Lambda deployment as 4k of literal text (confusingly named `ZipFile`)
+   or as a reference to a deployment bundle stored on S3. There's no way to deploy a local file.
+   As a result, I use a hack: the CloudFormation template deploys a dummy Lambda, which you must
+   replace in the next step.
+
+2. Build and deploy the Lambda.
+
+   As noted above, you can build and deploy the Lambda via `make`. Here I use the Poetry version
+   of the Makefile:
+
+   ```
+   make -f Makefile.poetry deploy
+   ```
+   
+   If you changed the `LambdaName` parameter when creating your stack, you'll need to pass the
+   new name to the `deploy` target:
+
+   ```
+   make -f Makefile.poetry deploy LAMBDA_NAME=MyFunctionName
+   ```
+
+3. Create the event trigger.
+
+   CloudFormation doesn't provide a way to configure bucket notifications separately from bucket
+   creation. Since this post is about uploading CloudTrail events to Elasticsearch, and not about
+   configuring CloudTrail, I'm leaving this as a manual step.
+
+   To do this, open the Lambda function in the Console. Click the "Add trigger" button, select S3
+   as the trigger type, leave the event type as "All object create events", and select the bucket
+   and prefix that holds your CloudTrail logs.
+
+   Within a few minutes, you should be able to go to the Elasticsearch cluster and see a new
+   index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). You can then
+   configure this index in Kibana, and start to explore your API events.
+
+4. Configure Kibana
+
+   Before using Kibana, you must [create an index pattern](https://www.elastic.co/guide/en/kibana/current/index-patterns.html).
+   For indexes generated by this project, the pattern name should be `cloudtrail-*`, and the
+   time filter field should be `eventTime`.
+
+
 # Implementation Notes
 
-Before we get into deploying the Lambda, here are a few of the constraints that went into its
-design.
-
-
-## Event Transformation
+## Event transformation
 
 The big challenge with storing CloudTrail events in Elasticsearch is that the events have a large
 variety of sub-objects, with arbitrary nesting. The `requestParameters` and `responseElements`
@@ -110,7 +249,7 @@ You can use these fields to identify specific hierarchical values, and they're a
 indexed as free-form text.
 
 
-## Elasticsearch Index Creation
+## Elasticsearch index creation
 
 As I mentioned earlier, we rely on dynamic mapping to handle the wide variety of fields
 in a CloudTrail event. However, this can cause Elasticsearch to make the wrong choice
@@ -195,108 +334,36 @@ If you are in a similar situation, edit the default index configuration (in
 }
 ```
 
+One last thing about index creation: the code will check to see if the index exists before
+trying to create it. That works great during "normal" operation, in which CloudTrail delivers
+one file at a time to S3.
 
-# Deployment
+However, if you upload a large number of files at once, Lambda will scale up the number of
+executing functions to match the number of files, and this can cause a race condition between
+creation and use. With the end result that some Lambda invocations fail and are not retried.
 
-This project consists of a single Lambda, written in Python, using the
-[`requests`](https://pypi.org/project/requests/) and
-[`aws-requests-auth`](https://pypi.org/project/aws-requests-auth/)
-libraries to write to Elasticsearch (it was adapted from prior work; I might rewrite
-using the Elasticsearch Python libraries, but this is a low-priority task).
+If you are doing a bulk upload, I recommend setting the reserved concurrency on the Lambda to
+1, which will prevent concurrent executions.
 
-Deploying is a multi-step process:
 
-1. Enable CloudTrail.
+## Index names
 
-   For this example, I'm going to assume that you already have CloudTrail enabled,
-   and an S3 bucket configured to accept its output. While it would simplify the
-   example if my CloudFormation script created the trail and bucket, it would put
-   me in the position of either delivering an insecure and incomplete solution, or
-   one that could not easily be torn down.
+As noted above, we create one index per month, but how do we give the index a relevant name?
 
-   Here are some things to consider when creating your own trail:
+The optimal way would be to base the index name on the timestamp of the events it contains.
+Unfortunately, the files that we receive from S3 may contain events from different days, so
+it would increase the complexity of the processor if we had to split each file into multiple
+uploads.
 
-   * Use a dedicated bucket.
-   * Use server-side encryption on this bucket.
-   * Enable [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
-     on that bucket, to ensure that an intruder can't delete the trails that show his/her activity.
-   * Create a cross-region trail.
-   * If you're in an organization, create the bucket and trail in the organization
-     root account, and enable for all child accounts.
+So instead, we use a hack: CloudTrail writes files using a very long key that includes the
+account number, region, and date. For example:
 
-2. Use CloudFormation to create the Elasticsearch cluster and Lambda
+```
+AWSLogs/o-xf2e8q7b2u/123456789012/CloudTrail/us-east-1/2020/03/06/123456789012_CloudTrail_us-east-1_20200306T1740Z_8hgMvcKamTPw3TTO.json.gz
+```
 
-   One of the annoying things about the CloudFormation `AWS::Lambda::Function` resource is that it
-   can either specify the Lambda deployment as 4k of literal text (confusingly named `ZipFile`) or
-   as a reference to a deployment bundle stored on S3. There's no way to deploy a local file. As a
-   result, I use a hack: the CloudFormation template deploys a dummy Lambda, which you must replace
-   in the next step.
-
-   This template has several parameters, most of which have defaults:
-
-    * `LambdaName`:
-      The name of the Lambda function. This is also used to name the function's execution role.
-      Default: `CloudTrail_to_Elasticsearch`.
-
-    * `CloudTrailBucket`:
-      The name of the S3 bucket where CloudTrail is saving event logs. No default.
-
-    * `CloudTrailKey`:
-      The prefix within this bucket for the log files. Yes, this goes against my recommendation
-      above for a dedicated bucket, but the real world sometimes has different ideas. If used,
-      you must include the trailing slash on this value (eg, "cloudtrail/", not "cloudtrail").
-
-    * `ElasticsearchDomainName`:
-      The domain name for the Elasticsearch cluster. This must comply with DNS naming rules
-      (ie, lowercase and with hyphens but no underscores). Default: `cloudtrail-events`.
-
-    * `ElasticsearchInstanceType`:
-      The type of instance to use for the Elasticsearch cluster. The default is `t2.medium.elasticsearch`,
-      which is sufficient for a few million events per month, but may need to be increased
-      if you're in a high-activity organization.
-
-    * `ElasticsearchStorageSize`:
-      The size of the storage volume, in gigabytes. The maximum size depends on the selected
-      instance type; the default is 32.
-      
-    * `AllowedIPs`:
-      Used to construct a permissions policy for the Elasticsearch cluster that allows access
-      from browsers. You should specify the public IP address of your local network, which you
-      can find by Googleing for "what's my IP". If you have multiple public IP addresses, list
-      them all, separated by a comma. No default.
-
-2. Build and deploy the Lambda.
-
-   I've created a Makefile to build and deploy the Lambda. There are two targets: `make build`
-   creates the deployment bundle (`lambda.zip`), and `make deploy` does that and then uploads
-   it using the AWS CLI.
-   
-   If you changed the `LambdaName` parameter when creating your stack, you'll need to pass the
-   new name to the `deploy` target:
-
-   ```
-   make deploy LAMBDA_NAME=MyFunctionName
-   ```
-
-3. Create the event trigger.
-
-   CloudFormation doesn't provide a way to configure bucket notifications separately from bucket
-   creation. Since this post is about uploading CloudTrail events to Elasticsearch, and not about
-   configuring CloudTrail, I'm leaving this as a manual step.
-
-   To do this, open the Lambda function in the Console. Click the "Add trigger" button, select S3
-   as the trigger type, leave the event type as "All object create events", and select the bucket
-   and prefix that holds your CloudTrail logs.
-
-   Within a few minutes, you should be able to go to the Elasticsearch cluster and see a new
-   index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). You can then
-   configure this index in Kibana, and start to explore your API events.
-
-4. Configure Kibana
-
-   Before using Kibana, you must [create an index pattern](https://www.elastic.co/guide/en/kibana/current/index-patterns.html).
-   For indexes generated by this project, the pattern name should be `cloudtrail-*`, and the
-   time filter field should be `eventTime`.
+To create the index name, we use a regular expresion to extract components from the final
+datestamp (`20200306T1740Z`) and translate to an index name: `cloudtrail-2020-03`.
 
 
 # Uploading old events
