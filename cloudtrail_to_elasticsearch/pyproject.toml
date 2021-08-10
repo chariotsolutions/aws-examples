@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "cloudtrail_to_elasticsearch"
+version = "0.1.0"
+description = "Transforms CloudTrail event logs that are stored on S3 and uploads them to an Elasticsearch cluster"
+authors = ["Keith Gregory <kgregory@chariotsolutions.com>"]
+
+[tool.poetry.dependencies]
+python              = "^3.7"
+requests            = "^2.25.1"
+aws-requests-auth   = "^0.4.3"
+
+[tool.poetry.dev-dependencies]
+boto3               = "^1.17.100"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

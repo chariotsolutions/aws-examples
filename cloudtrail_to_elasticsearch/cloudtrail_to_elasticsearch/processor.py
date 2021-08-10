@@ -15,13 +15,18 @@
 # limitations under the License.
 ################################################################################
 
+""" This is the main logic module. It relies on external classes to read files
+    from S3 and write events to Elasticsearch.
+    """
+
+
 import json
 import os
 import re
 import sys
 
-from es_helper import ESHelper
-from s3_helper import S3Helper
+from cloudtrail_to_elasticsearch.es_helper import ESHelper
+from cloudtrail_to_elasticsearch.s3_helper import S3Helper
 
 
 # the index configuration that we'll use
@@ -95,7 +100,7 @@ class Processor:
 ## reason to wrap them in an object: they're simple imperative functions,
 ## without collaborators
 
-FILENAME_REGEX = re.compile(r'.*CloudTrail/[^/]+/(\d{4})/(\d{2})/\d{2}/.*')
+FILENAME_REGEX = re.compile(r'.*_(\d{4})(\d{2})\d{2}T\d{4}Z_\w+.json.gz')
 
 def index_name(key):
     match = FILENAME_REGEX.match(key)

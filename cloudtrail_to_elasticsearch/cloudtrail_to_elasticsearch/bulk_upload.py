@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 ################################################################################
 # Copyright 2019 Chariot Solutions
 #
@@ -14,20 +15,23 @@
 # limitations under the License.
 ################################################################################
 
-""" Lambda function to upload CloudTrail events to Elasticsearch
+""" Bulk-loads events that have been stored but not picked up by Lambda. This
+    module is only intended to be invoked from the command-line:
+
+        bulk_upload.py BUCKET_NAME PREFIX
 """
 
-import processor
+import sys
 
+import cloudtrail_to_elasticsearch.processor
+from cloudtrail_to_elasticsearch.s3_helper import S3Helper
+
+
+if len(sys.argv) != 3:
+    print(__doc__)
+    sys.exit(1)
+
+s3 = S3Helper()
 px = processor.create()
 
-def lambda_handler(event, context):
-    for record in event.get('Records', []):
-        eventName = record['eventName']
-        bucket = record['s3']['bucket']['name']
-        key = record['s3']['object']['key']
-        try:
-            print(f"processing s3://{bucket}/{key}")
-            px.process_from_s3(bucket, key)
-        except Exception as ex:
-            print(f"failed to process file: {ex}")
+s3.iterate_bucket(sys.argv[1], sys.argv[2], px.process_from_s3)

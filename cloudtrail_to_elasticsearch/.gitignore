@@ -1,4 +1,4 @@
-__pycache__/
-
-lib/
-lambda.zip
+*.zip
+*.pyc
+dist/
+build/
