@@ -16,18 +16,22 @@ resource aws_s3_bucket upload_bucket {
          allowed_origins = [ "*", ]
          expose_headers  = [ "ETag", ]
   }
+
+  force_destroy = true
 }
 
 resource aws_s3_bucket archive_bucket {
   bucket = local.archive_bucket_name
   acl    = "private"
 
+  force_destroy = true
 }
 
 resource aws_s3_bucket static_bucket {
   bucket = local.static_bucket_name
   acl    = "private"
 
+  force_destroy = true
 }
 
 resource aws_s3_bucket_object static_item {
