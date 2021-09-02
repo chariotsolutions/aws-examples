@@ -57,11 +57,16 @@ const signedUrlUpload = (function() {
 
     return async function() {
         const selectedFile = document.getElementById('fileselector').files[0];
+        if (typeof selectedFile == 'undefined') {
+            alert("Choose a file first");
+            return;
+        }
+
         const url = await requestSignedUrl(selectedFile);
         const content = await loadFileContent(selectedFile);
         if (url && content) {
             await uploadFile(selectedFile, content, url);
-            alert("upload complete");
+            alert("upload via signed URL complete");
         }
     }
 

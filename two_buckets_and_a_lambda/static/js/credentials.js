@@ -50,10 +50,14 @@ const credentialsUpload = (function() {
 
     return async function() {
         const selectedFile = document.getElementById('fileselector').files[0];
+        if (typeof selectedFile == 'undefined') {
+            alert("Choose a file first");
+            return;
+        }
         const creds = await requestCredentials(selectedFile);
         if (creds) {
             await uploadFile(selectedFile, creds.access_key, creds.secret_key, creds.session_token, creds.region, creds.bucket);
-            alert("upload complete");
+            alert("upload via restricted credentials complete");
         }
     }
 
