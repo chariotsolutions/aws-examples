@@ -1,5 +1,5 @@
 This is a Lambda that processes CloudTrail log files from S3 and writes the events
-into an Elasticsearch cluster.
+to an Elasticsearch cluster.
 
 
 # Warnings and Caveats
@@ -9,15 +9,16 @@ as for S3 storage of the raw CloudTrail events. The provided CloudFormation temp
 creates a stack using a single `t2.medium.elasticsearch` instance and 32 GB of disk. 
 This costs $1.75 per day plus storage charges of $0.32/month.
 
-AWS Managed Elasticsearch does not automatically clean up its indexes. You can use the
-cleanup Lambda [here](https://github.com/kdgregory/aws-misc/tree/master/lambda/es-cleanup-signed)
-to maintain a constant number of indexes. As configured, the Lambda creates one index
-for each month of data.  How many indexes you can support will depend on your AWS API
-volume and the size of the cluster.
+AWS Managed Elasticsearch does not automatically clean up its indexes. You can use an
+[Index State Management](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ism.html)
+Policy to delete old indexes, or manually delete them with an HTTP `DELETE` request.
+As configured, the Lambda creates one index for each month of data. How many indexes
+you can support will depend on your AWS API volume and the size of the cluster.
 
 Deleting the Lambda function -- either manually or by deleting the CloudFormation stack --
 does _not_ delete the event trigger. You must explicitly delete it by going to the S3
-bucket, clicking "Events" under the "Properties" tab, and then deleting the notification.
+bucket holding your CloudTrail events, clicking "Events" under the "Properties" tab,
+and then removing the notification.
 
 
 # Building and Deploying
@@ -35,28 +36,27 @@ The easiest way to build is with `make`, and there are two Makefiles:
   In my opinion Poetry is preferable to `pip` because it also provides a virtual environment
   for running tests or the REPL.
 
-Other than the way that these Makefiles manage dependencies they are identical, and provide
-the following targets (the first four are shown in dependency order; the last two do not
-have dependencies):
+Both Makefiles provide the following targets (the first four are shown in dependency order,
+the last two are independent):
 
 * `init` installs the third-party libraries.
 
-* `test` runs tests. At this time the tests are minimal, intended to demonstrate the build
-  process rather than exercise the code.
+* `test` runs tests. At this time there are only a few tests, intended to demonstrate the
+  build process rather than exercise the code.
 
 * `package` creates the Lambda deployment bundle
 
 * `deploy` uses the AWS CLI to upload the Lambda deployment bundle.
 
 * `quicktest` runs tests without invoking the `init` dependency. This allows fast turnaround
-  time when you are actively modifying the code.
+  when you're actively modifying the code.
 
 * `clean` deletes the deployment bundle and all working directories. It does _not_ delete the
   Poetry virtual environment.
 
 Deploying is a multi-step process:
 
-1. Enable CloudTrail.
+1. [Enable CloudTrail](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html)
 
    For this example, I'm going to assume that you already have CloudTrail enabled,
    and an S3 bucket configured to accept its output. While it would simplify the
@@ -72,7 +72,7 @@ Deploying is a multi-step process:
 
    * Enable [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
      on that bucket, to ensure that an intruder can't delete the trails that show their activity.
-     Note that there are two type of Object Lock, and the "governance mode" locks can be overridden.
+     Note that there are two types of Object Lock, and the "governance mode" locks can be overridden.
      To ensure that an attacker cannot delete CloudTrail logs, you need to use a "legal hold," which
      does not permit _any_ deletion of an object within its retention period (as such, you may want
      to limit the retention period, especially if this is the first time that you've set up CloudTrail).
@@ -144,13 +144,18 @@ Deploying is a multi-step process:
 
 3. Create the event trigger.
 
-   CloudFormation doesn't provide a way to configure bucket notifications separately from bucket
-   creation. Since this post is about uploading CloudTrail events to Elasticsearch, and not about
-   configuring CloudTrail, I'm leaving this as a manual step.
+   CloudFormation requires you to configure bucket notifications at the time you create the bucket.
+   Since this post is about uploading CloudTrail events to Elasticsearch, and not about configuring
+   CloudTrail, I'm leaving this as a manual step:
 
-   To do this, open the Lambda function in the Console. Click the "Add trigger" button, select S3
-   as the trigger type, leave the event type as "All object create events", and select the bucket
-   and prefix that holds your CloudTrail logs.
+   1. Open the Lambda function in the Console. 
+   2. Click the "Add trigger" button. 
+   3. Select S3 as the trigger type. 
+   4. Leave the event type as "All object create events".
+   5. Pick the bucket that you configured with CloudTrail, and enter the log prefix (if any).
+   6. Click the checkbox that says you understand that writing back to the bucket from Lambda
+      is a Bad Idea (this Lambda doesn't do it).
+   7. Click "Add"
 
    Within a few minutes, you should be able to go to the Elasticsearch cluster and see a new
    index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). You can then
@@ -178,7 +183,7 @@ While the Lambda could explicitly transform each event into a standard format, t
 endless task: AWS constantly adds new API calls. Moreover, dynamic mapping is one of Elasticsearch's
 strengths; we should use it.
 
-My solution was to "flatten" the `requestParameters`, `responseElements`, and `resources` sub-objects
+My solution is to "flatten" the `requestParameters`, `responseElements`, and `resources` sub-objects
 before writing the event. This is best explained by example: the `RunInstances` API call returns an
 array of objects, one per instance created. The CloudTrail event looks like this (showing only the
 fields relevant to this example):
@@ -300,10 +305,10 @@ they should be.
 }
 ```
 
-There's one more thing to configure: the maximum number of allowed fields. This is
-far beyond what we've seen in our environment, but I went through several iterations
-of "oops, that wasn't enough." This is also configured by the Lambda when creating a
-new index:
+The Lambda also configures the maximum number of allowed fields when creating the
+index. The value 8192 is far beyond what we've seen in our environment, but I went
+through several iterations of "oops, that wasn't enough" before just giving up and
+picking a big number.
 
 ```
 'settings': {
@@ -336,14 +341,14 @@ If you are in a similar situation, edit the default index configuration (in
 
 One last thing about index creation: the code will check to see if the index exists before
 trying to create it. That works great during "normal" operation, in which CloudTrail delivers
-one file at a time to S3.
-
-However, if you upload a large number of files at once, Lambda will scale up the number of
-executing functions to match the number of files, and this can cause a race condition between
-creation and use. With the end result that some Lambda invocations fail and are not retried.
+one file at a time to S3. However, if you upload a large number of files at once, Lambda will
+scale up the number of executing functions to match the number of files, and this can cause a
+race condition between creation and use. With the end result that some Lambda invocations fail
+and are not retried.
 
 If you are doing a bulk upload, I recommend setting the reserved concurrency on the Lambda to
-1, which will prevent concurrent executions.
+1, which will prevent concurrent executions (but will take longer to complete). Or alternatively,
+pre-create the indexes to match the data that you're using.
 
 
 ## Index names
@@ -352,18 +357,11 @@ As noted above, we create one index per month, but how do we give the index a re
 
 The optimal way would be to base the index name on the timestamp of the events it contains.
 Unfortunately, the files that we receive from S3 may contain events from different days, so
-it would increase the complexity of the processor if we had to split each file into multiple
+it would increase the complexity of the code if we had to split each file into multiple
 uploads.
 
-So instead, we use a hack: CloudTrail writes files using a very long key that includes the
-account number, region, and date. For example:
-
-```
-AWSLogs/o-xf2e8q7b2u/123456789012/CloudTrail/us-east-1/2020/03/06/123456789012_CloudTrail_us-east-1_20200306T1740Z_8hgMvcKamTPw3TTO.json.gz
-```
-
-To create the index name, we use a regular expresion to extract components from the final
-datestamp (`20200306T1740Z`) and translate to an index name: `cloudtrail-2020-03`.
+So instead, we extract the year and month from the key that CloudTrail uses to write the
+event file. This is extracted via regular expression.
 
 
 # Uploading old events

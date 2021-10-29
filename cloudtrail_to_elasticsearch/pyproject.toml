@@ -6,8 +6,8 @@ authors = ["Keith Gregory <kgregory@chariotsolutions.com>"]
 
 [tool.poetry.dependencies]
 python              = "^3.7"
-requests            = "^2.25.1"
-aws-requests-auth   = "^0.4.3"
+requests            = "~2.26.0"
+aws-requests-auth   = "~0.4.3"
 
 [tool.poetry.dev-dependencies]
 boto3               = "^1.17.100"

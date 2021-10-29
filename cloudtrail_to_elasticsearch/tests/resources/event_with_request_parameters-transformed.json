@@ -1,0 +1,45 @@
+{
+  "eventVersion": "1.05",
+  "userIdentity": {
+    "type": "AssumedRole",
+    "principalId": "AROA3LUQPVEKAAOC4652P:RDSAuroraServeless",
+    "arn": "arn:aws:sts::123456789012:assumed-role/AWSServiceRoleForRDS/RDSAuroraServeless",
+    "accountId": "123456789012",
+    "accessKeyId": "ASIA3L5KUQPV5QOWIAA6",
+    "sessionContext": {
+      "sessionIssuer": {
+        "type": "Role",
+        "principalId": "AROA3LUQPVEKAAOC4652P",
+        "arn": "arn:aws:iam::123456789012:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS",
+        "accountId": "123456789012",
+        "userName": "AWSServiceRoleForRDS"
+      },
+      "webIdFederationData": {},
+      "attributes": {
+        "mfaAuthenticated": "false",
+        "creationDate": "2020-09-13T21:45:55Z"
+      }
+    },
+    "invokedBy": "rds.amazonaws.com"
+  },
+  "eventTime": "2020-09-14T01:27:53Z",
+  "eventSource": "logs.amazonaws.com",
+  "eventName": "DescribeLogStreams",
+  "awsRegion": "us-east-1",
+  "sourceIPAddress": "rds.amazonaws.com",
+  "userAgent": "rds.amazonaws.com",
+  "requestParameters_raw": "{\"logGroupName\": \"some_group\", \"logStreamNamePrefix\": \"some_stream\"}",
+  "requestParameters_flattened": {
+    "logGroupName": [
+      "some_group"
+    ],
+    "logStreamNamePrefix": [
+      "some_stream"
+    ]
+  },
+  "requestID": "ac7a380c-60db-4d0e-884f-71b5bda83606",
+  "eventID": "8333c255-11f2-49ef-9980-76b5dc1fb2da",
+  "eventType": "AwsApiCall",
+  "apiVersion": "20140328",
+  "recipientAccountId": "123456789012"
+}

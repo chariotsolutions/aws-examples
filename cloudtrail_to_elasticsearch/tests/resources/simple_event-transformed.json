@@ -1,0 +1,24 @@
+{
+  "eventVersion": "1.08",
+  "userIdentity": {
+    "type": "AssumedRole",
+    "principalId": "AROAIQ5YG2D5ASTSBJPRE:TrustedAdvisor_123456789012_62d91a74-cffb-4d27-865d-58d51417a1b8",
+    "arn": "arn:aws:sts::123456789012:assumed-role/AWSServiceRoleForTrustedAdvisor/TrustedAdvisor_123456789012_62d91a74-cffb-4d27-865d-58d51417a1b8",
+    "accountId": "123456789012",
+    "accessKeyId": "ASIA25XXSJ5QZ54GMEF6",
+    "invokedBy": "trustedadvisor.amazonaws.com"
+  },
+  "eventTime": "2021-01-27T01:35:02Z",
+  "eventSource": "rds.amazonaws.com",
+  "eventName": "DescribeAccountAttributes",
+  "awsRegion": "ap-southeast-2",
+  "sourceIPAddress": "trustedadvisor.amazonaws.com",
+  "userAgent": "trustedadvisor.amazonaws.com",
+  "requestID": "879fd683-df19-4d30-9a6b-288d80fb8587",
+  "eventID": "569e7727-2a83-4b14-8190-70e92dc16ad1",
+  "readOnly": true,
+  "eventType": "AwsApiCall",
+  "managementEvent": true,
+  "eventCategory": "Management",
+  "recipientAccountId": "123456789012"
+}

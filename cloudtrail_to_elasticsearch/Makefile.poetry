@@ -2,7 +2,7 @@
 
 LAMBDA_NAME     ?= CloudTrail_to_Elasticsearch
 
-POETRY_DIST_DIR := ${PWD}/dist
+POETRY_DIST_DIR := $(PWD)/dist
 BUILD_DIR       := $(PWD)/build
 DEPLOY_DIR      := $(PWD)
 ARTIFACT        := lambda.zip
@@ -10,13 +10,13 @@ ARTIFACT        := lambda.zip
 default: package
 
 deploy: package
-	aws lambda update-function-code --function-name $(LAMBDA_NAME) --zip-file fileb://${DEPLOY_DIR}/${ARTIFACT}
+	aws lambda update-function-code --function-name $(LAMBDA_NAME) --zip-file fileb://$(DEPLOY_DIR)/$(ARTIFACT)
 
 package: test
 	poetry build
-	mkdir -p package
-	poetry run pip install --upgrade -t ${BUILD_DIR} ${POETRY_DIST_DIR}/*.whl
-	cd $(BUILD_DIR) ; zip -r ${DEPLOY_DIR}/${ARTIFACT} . -x '*.pyc'
+	mkdir -p $(BUILD_DIR)
+	poetry run pip install --upgrade -t $(BUILD_DIR) $(POETRY_DIST_DIR)/*.whl
+	cd $(BUILD_DIR) ; zip -r $(DEPLOY_DIR)/$(ARTIFACT) . -x '*.pyc'
 
 test:	init quicktest
 
@@ -27,6 +27,6 @@ init:
 	poetry install
 
 clean:
-	rm -rf ${BUILD_DIR}
-	rm ${DEPLOY_DIR}/${ARTIFACT}
+	rm -rf $(BUILD_DIR)
+	rm $(DEPLOY_DIR)/$(ARTIFACT)
 
