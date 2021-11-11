@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Example of using the RDS Data API in a webhook"
+
+Parameters:
+
+  VpcId:
+    Description:                        "VPC where the database will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  SubnetIds:
+    Description:                        "Allowed subnets for database deployment (typically private)"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+
+Resources:
+
+  ##
+  ## Database
+  ##
+
+  # Aurora wants a security group; add a local ingress rule if you want one, but the Data API doesn't need it
+  DBSecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "${AWS::StackName}-Database"
+      GroupDescription:                 "Allows access to the database (nominally from application)"
+      VpcId:                            !Ref VpcId
+
+
+  DBSubnetGroup:
+    Type:                               "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription:         !Sub "Subnet group for ${AWS::StackName}; managed by CloudFormation stack ${AWS::StackName}"
+      SubnetIds:                        !Ref SubnetIds
+
+
+  DBAdminUserSecret:
+    Type:                               "AWS::SecretsManager::Secret"
+    Properties:
+      Name:                             !Sub "${AWS::StackName}-Database-Admin"
+      Description:                      !Sub "RDS admin username and password"
+      GenerateSecretString:
+        SecretStringTemplate:           !Sub |
+                                        {
+                                          "username": "postgres",
+                                          "database": "postgres"
+                                        }
+        GenerateStringKey:              "password"
+        ExcludePunctuation:             true
+        PasswordLength:                 64
+
+
+  ParameterGroup:
+    Type:                               "AWS::RDS::DBClusterParameterGroup"
+    Properties:
+      Description:                      !Sub "Managed by CloudFormation: ${AWS::StackName}"
+      Family:                           "aurora-postgresql10"
+      Parameters:
+        ssl:                            "1"
+
+
+  Database:
+    Type:                               "AWS::RDS::DBCluster"
+    Properties:
+      Engine:                           "aurora-postgresql"
+      EngineVersion:                    "10.7"
+      EngineMode:                       "serverless"
+      EnableHttpEndpoint:               true
+      ScalingConfiguration:
+        MinCapacity:                    2
+        MaxCapacity:                    2
+        AutoPause:                      true
+        SecondsUntilAutoPause:          300
+      DBClusterParameterGroupName:      !Ref ParameterGroup
+      MasterUsername:                   !Sub "{{resolve:secretsmanager:${DBAdminUserSecret}:SecretString:username}}"
+      MasterUserPassword:               !Sub "{{resolve:secretsmanager:${DBAdminUserSecret}:SecretString:password}}"
+      DatabaseName:                     !Sub "{{resolve:secretsmanager:${DBAdminUserSecret}:SecretString:database}}"
+      DBSubnetGroupName:                !Ref DBSubnetGroup
+      VpcSecurityGroupIds:              [ !Ref DBSecurityGroup ]
+      BackupRetentionPeriod:            7
+      StorageEncrypted:                 true
+
+
+  ##
+  ## Lambda Function
+  ##
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}-ExecutionRole"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName:                   "AccessDataAPI"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:                   "rds-data:*"
+              Resource:                 !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${Database}"
+        - PolicyName:                   "RetrieveDatabaseSecret"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:                   "secretsmanager:GetSecretValue"
+              Resource:                 !Ref DBAdminUserSecret
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Ref AWS::StackName
+      Description:                      "Responds to webhook events by updating a database"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          "python3.8"
+      Handler:                          "index.lambda_handler"
+      Code: 
+        ZipFile:                        |
+                                        import json
+
+                                        def lambda_handler(event, context):
+                                            print(json.dumps(event))
+                                            raise Exception("dummy Lambda handler; replace with index.py")
+      MemorySize:                       512
+      Timeout:                          60
+      Environment: 
+        Variables:
+          DB_SECRET_ARN:                !Ref DBAdminUserSecret
+          DB_INSTANCE_ARN:              !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${Database}"
+
+
+  InvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ LambdaFunction, APIGateway ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !Ref LambdaFunction
+      Principal:                        "apigateway.amazonaws.com"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*"
+
+
+##
+## API Gateway
+##
+
+  APIGateway:
+    Type:                               "AWS::ApiGatewayV2::Api"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}"
+      Description:                      "Handles email webhooks"
+      ProtocolType:                     "HTTP"
+
+
+  APIGatewayRootRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "POST /"
+      Target:                           !Sub "integrations/${APIGatewayLambdaIntegration}"
+
+
+  APIGatewayLambdaIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles all requests for API operations"
+      IntegrationMethod:                "POST"
+      IntegrationType:                  "AWS_PROXY"
+      IntegrationUri:                   !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations"
+      PayloadFormatVersion:             "1.0"
+
+
+  APIGatewayDefaultStage:
+    Type:                               "AWS::ApiGatewayV2::Stage"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      StageName:                        "$default"
+      Description:                      "Default auto-deployed stage"
+      AutoDeploy:                       true
+      AccessLogSettings: 
+        DestinationArn:                 !GetAtt APIGatewayAccessLog.Arn
+        Format:                         !Join 
+          -                             " "
+          - -                           '{'
+            -                           '"requestId": "$context.requestId",'
+            -                           '"ip": "$context.identity.sourceIp",'
+            -                           '"requestTime": "$context.requestTime",'
+            -                           '"httpMethod": "$context.httpMethod",'
+            -                           '"path": "$context.path",'
+            -                           '"routeKey": "$context.routeKey",'
+            -                           '"status": "$context.status",'
+            -                           '"protocol": "$context.protocol",'
+            -                           '"responseLength": "$context.responseLength",'
+            -                           '"context.integration.error": "$context.integration.error",'
+            -                           '"context.integration.status": "$context.integration.status"'
+            -                           "}"
+
+
+  APIGatewayAccessLog:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/apigateway/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+Outputs:
+
+  APIGatewayUrl:
+    Description:                        "The root URL for the example"
+    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/"
+
+  DatabaseSecretArn:
+    Description:                        "ARN of the Secrets Manager secret containing the database login"
+    Value:                              !Ref DBAdminUserSecret
+
+  DatabaseInstanceArn:
+    Description:                        "ARN of the database instance"
+    Value:                              !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${Database}"

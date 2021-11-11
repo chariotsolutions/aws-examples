@@ -1,0 +1,31 @@
+[
+  {
+    "email": "user1@example.com",
+    "timestamp": 1513299569,
+    "smtp-id": "<14c5d75ce93.dfd.64b469@ismtpd-555>",
+    "event": "dropped",
+    "category": "cat marketing",
+    "sg_event_id": "sg_event_id",
+    "sg_message_id": "sg_message_id",
+    "reason": "Bounced Address",
+    "status": "5.0.0"
+  },
+  {
+    "email": "user2@example.com",
+    "timestamp": 1513299569,
+    "smtp-id": "<14c5d75ce93.dfd.64b469@ismtpd-555>",
+    "event": "spamreport",
+    "category": "cat marketing",
+    "sg_event_id": "sg_event_id",
+    "sg_message_id": "sg_message_id"
+  },
+  {
+    "email": "user3@example.com",
+    "timestamp": 1513299569,
+    "smtp-id": "<14c5d75ce93.dfd.64b469@ismtpd-555>",
+    "event": "unsubscribe",
+    "category": "cat marketing",
+    "sg_event_id": "sg_event_id",
+    "sg_message_id": "sg_message_id"
+  }
+]
