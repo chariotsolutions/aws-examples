@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Squid proxy server as ECS service"
+
+Parameters:
+
+  ServiceName:
+    Description:                        "Name of the service (this is used for all related resources)"
+    Type:                               "String"
+    Default:                            "squid_proxy"
+
+  ECSClusterName:
+    Description:                        "Name of an existing ECS cluster where the service will be deployed"
+    Type:                               "String"
+    Default:                            "default"
+
+  CloudMapNamespaceId:
+    Description:                        "The ID of the Cloud Map namespace where this service will be registered; must support DNS lookup"
+    Type:                               "String"
+
+  ImageName:
+    Description:                        "Fully-qualified name of the Docker image for the configured proxy"
+    Type:                               "String"
+
+  VpcId:
+    Description:                        "VPC where the environment will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  VpcCIDR:
+    Description:                        "The VPC's CIDR range, used to construct an ingress rule for proxy"
+    Type:                               "String"
+
+  PublicSubnets:
+    Description:                        "Subnets used to deploy proxy servers"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+  TaskCPU:
+    Description:                        "CPU units for service task, in megabytes (change only if unable to support load)"
+    Type:                               "String"
+    Default:                            "512"
+
+  TaskMemory:
+    Description:                        "Memory size for service task, in megabytes (change only if unable to support load)"
+    Type:                               "String"
+    Default:                            "1024"
+
+
+Resources:
+
+  SecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "ECS-${ServiceName}"
+      GroupDescription:                 !Sub "Ingress and Egress for the ECS service ${ServiceName}"
+      VpcId:                            !Ref VpcId
+      SecurityGroupIngress:
+        -
+          IpProtocol:                   "tcp"
+          CidrIp:                       !Ref VpcCIDR
+          FromPort:                     3128
+          ToPort:                       3128
+      SecurityGroupEgress:
+        -
+          IpProtocol:                   "tcp"
+          CidrIp:                       "0.0.0.0/0"
+          FromPort:                     0
+          ToPort:                       65535
+
+
+  ECSTaskExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "ECS-${ServiceName}-${AWS::Region}-TaskExecutionRole"
+      Path:                             "/ecs/"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          -
+            Effect:                     "Allow"
+            Principal:                  { Service: ["ecs-tasks.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      ManagedPolicyArns:                [ "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" ]
+
+
+  CloudWatchLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/ecs/${ServiceName}"
+      RetentionInDays:                  7
+
+
+  TaskDefinition:
+    Type:                               "AWS::ECS::TaskDefinition"
+    Properties:
+      Family:                           !Sub "${AWS::StackName}"
+      RequiresCompatibilities:          [ "FARGATE" ]
+      NetworkMode:                      "awsvpc"
+      Cpu:                              !Ref TaskCPU
+      Memory:                           !Ref TaskMemory
+      ExecutionRoleArn:                 !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        -
+          Name:                         !Ref ServiceName
+          Image:                        !Ref ImageName
+          Essential:                    true
+          LogConfiguration:
+            LogDriver:                  "awslogs"
+            Options:
+              awslogs-region:           !Ref AWS::Region
+              awslogs-group:            !Ref CloudWatchLogGroup
+              awslogs-stream-prefix:    !Ref ServiceName
+          PortMappings:                 [ {ContainerPort: 3128} ]
+
+
+  ECSService:
+    Type:                               "AWS::ECS::Service"
+    Properties:
+      ServiceName:                      !Ref ServiceName
+      TaskDefinition:                   !Ref TaskDefinition
+      LaunchType:                       "FARGATE"
+      Cluster:                          !Ref ECSClusterName
+      DesiredCount:                     2
+      SchedulingStrategy:               "REPLICA"
+      DeploymentConfiguration:
+        MinimumHealthyPercent:          100
+        MaximumPercent:                 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp:               "ENABLED"
+          SecurityGroups:               [ !Ref SecurityGroup ]
+          Subnets:                      !Ref PublicSubnets
+      ServiceRegistries:
+        - RegistryArn:                  !GetAtt ServiceDiscovery.Arn
+
+
+  ServiceDiscovery:
+    Type:                               "AWS::ServiceDiscovery::Service"
+    Properties: 
+      Name:                             !Ref ServiceName
+      Description:                      !Sub "Squid proxy, managed by CloudFormation stack ${AWS::StackName}"
+      NamespaceId:                      !Ref CloudMapNamespaceId
+      DnsConfig:
+        DnsRecords:
+          - Type:                       "A"
+            TTL:                        15
