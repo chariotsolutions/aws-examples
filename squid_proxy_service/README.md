@@ -141,7 +141,7 @@ export HTTPS_PROXY=http://squid_proxy.internal:3128
 ```
 
 
-### Jave version 1 SDK
+### Java version 1 SDK
 
 To build:
 
@@ -174,3 +174,33 @@ To run the no-proxies version with the proxy server configured by environment va
 export HTTPS_PROXY=http://squid_proxy.internal:3128
 java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
 ```
+
+
+### Java version 2 SDK
+
+To build:
+
+```
+mvn clean package
+```
+
+To run the explicit proxy version (will fail if you don't have a proxy server running,
+with the DNS name `squid_proxy.internal`):
+
+```
+java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.ExplicitProxy
+```
+
+To run the no-proxies version without a proxy (will time-out if running on a private subnet):
+
+```
+java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
+```
+
+To run the no-proxies version with the proxy server configured by system properties:
+
+```
+java -Dhttp.proxyHost="squid_proxy.internal" -Dhttp.proxyPort=3128 -Dhttp.nonProxyHosts=169.254.169.254 -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
+```
+
+At the present time, the V2 SDK doesn't support configuration by environment variable.
