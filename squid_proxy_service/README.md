@@ -9,22 +9,19 @@ from the origin server whenever viewed. In this example, however, we use it as a
 simple "forward" proxy, which sits between an application and the web sites that
 it uses, and decides whether to allow the connection.
 
-> Forward proxies have a bad reputation: an unsecured proxy that's accessible
-  from the Internet can allow a user or program to access a website while hiding
-  its actual origin. For this example, the proxy lives inside an AWS VPC, only
-  accepts connections from within the VPC, and restricts the destinations for
-  those connections.
 
 We chose the Squid proxy because it is simple to configure for our needs (although
-the [complete set of config directives](http://www.squid-cache.org/Doc/config/) is
-quite large). Other options include Apache httpd and HAProxy; there's also a
+the [complete set of config directives]() is
+quite large).
+
+Other options include Apache httpd and HAProxy; there's also a
 third-party module for nginx. If you are more comfortable with a different server,
 feel free to adapt this example to use it.
 
 
 ## Configuring the proxy
 
-To configure a proxy, you start with [acl](http://www.squid-cache.org/Doc/config/acl/)
+To configure a proxy, you start with [acl]()
 directives that identify sources and destinations. For example:
 
 ```
@@ -118,56 +115,29 @@ Fargate containers. Once both containers are up and running, you can use the pro
 
 ## Examples
 
-All of these examples use the hostname `squid_proxy.internal` to refer to the proxy. If
-you changed the name when deploying, or your Cloud Map namespace uses a different DNS
-name, change as needed.
+For each SDK, we've provided two example programs that retrieve the user's current
+identity (equivalent to running `aws sts get-caller-identity` from the command line).
+One example uses explicit proxy configuration, while the other does not (but can be
+configured at runtime).
+
+To run the examples, you will need valid AWS credentials. These can be configured in
+any of the standard ways (environment variables, `aws configure`, instance metadata).
+
+All examples use the hostname `squid_proxy.internal` to refer to the proxy. If you
+changed the name when deploying, or your Cloud Map namespace uses a different DNS
+name, update before running.
 
 
 ### Python
 
-Python provides you with two ways to configure a proxy: via environment variables or
-with an explicit dictionary of proxy destinations. These mechanisms are available to
-the Boto3 AWS SDK, and the [requests](https://docs.python-requests.org/en/master/)
-library. The built-in `urllib` package also supports environment variables, but has
-a different approach to explicitly-configured proxies.
+Both examples are written as executable programs using a Linux "shebang" for Python.
 
-I'll start with environment variables:
-
-* `HTTP_PROXY` identifies the proxy server to use for HTTP requests.
-* `HTTPS_PROXY` identifies the proxy server to use for HTTPS requests.
-
-Both of these variables hold the URL of the server: `http://squid_proxy.internal:3128`.
-They can also include a username and password for authenticated requests (which I don't
-show here because the example proxy doesn't use authentication).
-
-Environment variables simplify deployment, _but can't be used for programs running in
-EC2 or ECS that use instance roles._ The reason is that the credentials associated
-with these roles are retrieved using an HTTP request to the instance metadata endpoint.
-This request will be passed to the proxy, which is unable to fulfill it.
-
-Instead, you can use an explicit proxy dictionary:
+To make [no_proxy.py](examples/python/no_proxy.py) use the proxy server, you can set
+the `HTTPS_PROXY` environment variable:
 
 ```
-proxies = {
-  'http': 'http://squid_proxy.internal:3128',
-  'https': 'http://squid_proxy.internal:3128',
-}
-
-boto_config = botocore.config.Config(proxies=proxies)
-
-client = boto3.client('logs', config=boto_config)
-```
-
-This same dictionary can be used for calls through the `requests` library, either
-on a per-request basis or attached to a `Session` object:
-
-```
-rsp = requests.get("http://www.example.com", proxies=proxies)
-
-session = requests.Session()
-session.proxies.update(proxies)
-
-rsp = session.get("http://www.example.com")
+export HTTPS_PROXY=http://squid_proxy.internal:3128
+./no_proxy.py
 ```
 
 
