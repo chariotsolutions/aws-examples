@@ -143,69 +143,34 @@ export HTTPS_PROXY=http://squid_proxy.internal:3128
 
 ### Jave version 1 SDK
 
-The version 1 SDK provides several ways to configure a proxy:
-
-* Environment variables.
-* System properties.
-* Explicit configuration.
-
-I'll start with explicit configuration, since the it makes the other options
-easier to understand.  To configure a proxy endpoint, you must provide a
-`ClientConfiguration` object to the client builder:
+To build:
 
 ```
-ClientConfiguration config = new ClientConfiguration()
-                             .withProxyProtocol(Protocol.HTTP)
-                             .withProxyHost("squid-proxy.internal")
-                             .withProxyPort(3128)
-                             .withNonProxyHosts("169.254.169.254");
-
-AWSLogs client = AWSLogsClientBuilder.standard()
-                 .withClientConfiguration(config)
-                 .build();
+mvn clean package
 ```
 
-The `ClientConfiguration` object alows you to configure each aspect of the proxy
-URL -- scheme, username, password, hostname, and port -- individually. A nice
-feature of the Java SDK is the ability to tell the client to bypass the proxy for
-specific hostnames: here I give it the EC2 metadata address, which means that I
-can retrieve EC2 instance credentials. There are also functions for working with
-Windows NTLM domain proxies.
-
-As I said, the system properties are based on these client configuration methods,
-and there are two sets of matched properties:
-
-* `http.proxyHost` / `https.proxyHost` to set the hostname.
-* `http.proxyPort` / `https.proxyPort` to set the port.
-* `http.proxyUser` / `https.proxyUser` to set the (optional) username for an
-  authenticating proxy.
-* `http.proxyPassword` / `https.proxyPassword` to set the (optional) password
-  for an authenticating proxy.
-
-The system property used depends on the type of connection to AWS: if you use
-an HTTP connection (which you shouldn't!), the client picks `http.proxyHost`
-and its siblings; if you use an HTTPS connection (the default), it picks
-`https.proxyHost` and siblings.
-
-There's also a property `http.nonProxyHosts`, for setting hostnames that bypass
-the proxy. There's _not_ a system property to choose the protocol, nor are there
-system proxies for NTLM authentication.
-
-To use these system proeprties, you would normally provide them when invoking
-the Java application:
+To run the explicit proxy version (will fail if you don't have a proxy server running,
+with the DNS name `squid_proxy.internal`):
 
 ```
-java -Dhttps.proxyHost="localhost" -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts=169.254.169.254 -jar myapp.jar
+java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.ExplicitProxy
 ```
 
-Passing these properties on the command-line is straightforward, although it
-may be inconvenient. However, there's no way to set provide system properties
-to a Lambda, so you must explicitly set them in your function code. This may
-cause problems with order of initialization, since the Lambda runtime performs
-initialization (such as logging) before it ever calls your function code.
+To run the no-proxies version without a proxy (will time-out if running on a private subnet):
 
-Fortunately, the v1 SDK supports environment variables:
+```
+java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
+```
 
-* `HTTP_PROXY` and `HTTPS_PROXY` act the same way that they do in Python
-  (eg: `http://squid-proxy:3128` or `http://user:password@otherproxy:9999`).
-* `NO_PROXY` contains a list of the hostnames that should bypass the proxy.
+To run the no-proxies version with the proxy server configured by system properties:
+
+```
+java -Dhttps.proxyHost="squid_proxy.internal" -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts=169.254.169.254 -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
+```
+
+To run the no-proxies version with the proxy server configured by environment variables:
+
+```
+export HTTPS_PROXY=http://squid_proxy.internal:3128
+java -cp target/proxy-example-v1-1.0.0.jar com.chariotsolutions.example.NoProxy
+```
