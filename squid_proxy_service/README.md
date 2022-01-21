@@ -204,3 +204,29 @@ java -Dhttp.proxyHost="squid_proxy.internal" -Dhttp.proxyPort=3128 -Dhttp.nonPro
 ```
 
 At the present time, the V2 SDK doesn't support configuration by environment variable.
+
+
+### JavaScript version 2 SDK
+
+This uses NodeJS for the example; you must install Node and NPM before building.
+
+To build:
+
+```
+npm install``
+
+To run the explicit proxy version (as with other examples, you must have a proxy server
+running at the address `squid_proxy.internal`):
+
+```
+node explicit_proxy.js
+```
+
+There is, to the best of my knowledge, no way to configure a proxy using environment
+variables.
+
+
+### JavaScript version 3 SDK
+
+At this time, I do not believe there is any way to configure a proxy server with the
+v3 JavaScript SDK. It uses a different client configuration structure than the v2 SDK.
