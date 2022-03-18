@@ -20,6 +20,10 @@ does _not_ delete the event trigger. You must explicitly delete it by going to t
 bucket holding your CloudTrail events, clicking "Events" under the "Properties" tab,
 and then removing the notification.
 
+The current revision of this Lambda works with Elasticsearch version 6.8. The index
+creation code uses a "document type" that is incompatible with Elasticsearch 7.x or
+AWS OpenSearch. Updates are in the queue.
+
 
 # Building and Deploying
 

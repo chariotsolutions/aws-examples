@@ -17,7 +17,7 @@ package: init
 	cp -r $(SRC_DIR) ${BUILD_DIR}
 	cd $(BUILD_DIR) ; zip -r ${DEPLOY_DIR}/${ARTIFACT} . -x '*.pyc'
 
-test:	init quicktest
+test: init quicktest
 
 quicktest:
 	PYTHONPATH="${PWD}:$(BUILD_DIR)" python -m unittest discover -s tests
@@ -28,5 +28,6 @@ init:
 	pip install --upgrade -r requirements.txt -t $(BUILD_DIR)
 
 clean:
-	rm $(DEPLOY_DIR)/$(ARTIFACT)
+	rm -f $(DEPLOY_DIR)/$(ARTIFACT)
 	rm -rf ${BUILD_DIR}
+	rm -rf */__pycache__
