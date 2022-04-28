@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 ################################################################################
 # Copyright 2019 Chariot Solutions
 #
@@ -25,10 +24,13 @@ from aws_requests_auth.aws_auth import AWSRequestsAuth
 
 class ESHelper:
 
-    """ Encapsulates operations against an Elasticsearch cluster.
+    """ An instance of this class aggregates events into batche updates to a single
+        index, ensuring that the index exists.
 
-        This is intended to be a generic helper class, not tied to CloudTrail
-        processing.
+        To use, call add_events() as many times as needed, followed by flush(). The
+        former will accumulate events into a batch, automatically calling flush if
+        the the configured batch size is exceeded or the caller starts writing to a
+        new index.
 
         By default, instances are configured to access an AWS managed Elasticsearch
         cluster, retrieving the hostname and AWS credentials from the environment.
@@ -38,7 +40,7 @@ class ESHelper:
         mock instance.
     """
 
-    def __init__(self, hostname=None, use_aws_auth=True, use_https=True, mapping_type="_doc", index_config=None):
+    def __init__(self, hostname=None, use_aws_auth=True, use_https=True, mapping_type="_doc", index_config=None, batch_size=500):
         """ 
             hostname      If provided, the hostname of the Elasticsearch cluster. If not
                           provided, this is read from the environment variable ES_HOSTNAME.
@@ -71,16 +73,38 @@ class ESHelper:
             self.protocol = "http"
         self.index_config = index_config
         self.mapping_type = mapping_type
+        self.batch_size = batch_size
+        self.current_index = None
+        self.batch = []
     
 
-    def upload(self, events, index):
-        """ Uploads a batch of events to the specified index, creating it if necessary.
+    def add_events(self, events, index):
+        """ Adds events to the batch for the specified index. If this causes the
+            batch to exceed batch-size, or is for a different index than previous
+            calls, it will invoke flush().
         """
-        print(f'writing {len(events)} events to index {index}')
-        self.ensure_index_exists(index)
-        updates = [self.prepare_event(event, index) for event in events]
+        if self.current_index != index:
+            self.flush()  # this is a no-op first time through
+            self.current_index = index
+        self.batch += events
+        if len(self.batch) > self.batch_size:
+            self.flush()
+
+
+    def flush(self):
+        """ Writes all events in the current batch to Elasticsearch, then clears
+            the batch.
+            """
+        # no-op to simplify calling code
+        if not self.current_index or not self.batch:
+            return
+        print(f'writing {len(self.batch)} events to index {self.current_index}')
+        self.ensure_index_exists(self.current_index)
+        updates = [self.prepare_event(event, self.current_index) for event in self.batch]
         rsp = self.do_request(requests.post, "_bulk", "".join(updates), 'application/x-ndjson')
         self.log_upload_errors(rsp)
+        self.current_index = None
+        self.batch = []
         
 
     def ensure_index_exists(self, index):

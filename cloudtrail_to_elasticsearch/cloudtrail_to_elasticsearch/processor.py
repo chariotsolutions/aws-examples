@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 ################################################################################
 # Copyright 2019 Chariot Solutions
 #
@@ -82,18 +81,23 @@ class Processor:
         self.es_helper = es_helper
         self.s3_helper = s3_helper
 
-    def process_from_s3(self, bucket, key):
+    def process_from_s3(self, bucket, key, flush=True):
         index = index_name(key)
         if index:
             content = self.s3_helper.retrieve(bucket, key)
-            self.process(content, index)
+            self.process(content, index, flush)
         else:
             print(f'cannot extract index name from key: {key}')
 
-    def process(self, content, index):
+    def process(self, content, index, flush=True):
         parsed = json.loads(content)
         transformed = transform_events(parsed.get('Records', []))
-        self.es_helper.upload(transformed, index)
+        self.es_helper.add_events(transformed, index)
+        if flush:
+            self.flush()
+
+    def flush(self):
+        self.es_helper.flush()
 
 
 ## the following are exposed to simplify testing ... plus, there's no good
