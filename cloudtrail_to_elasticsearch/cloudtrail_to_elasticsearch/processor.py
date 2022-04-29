@@ -103,12 +103,14 @@ class Processor:
         else:
             print(f'cannot extract index name from key: {key}')
 
+
     def process(self, content, index, flush=True):
         parsed = json.loads(content)
         transformed = transform_events(parsed.get('Records', []))
         self.es_helper.add_events(transformed, index)
         if flush:
             self.flush()
+
 
     def flush(self):
         self.es_helper.flush()
