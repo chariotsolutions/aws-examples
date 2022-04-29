@@ -19,6 +19,7 @@
     """
 
 
+import gzip
 import json
 import os
 import re
@@ -80,6 +81,19 @@ class Processor:
     def __init__(self, es_helper, s3_helper):
         self.es_helper = es_helper
         self.s3_helper = s3_helper
+
+
+    def process_local_file(self, pathname, flush=True):
+        index = index_name(pathname)
+        if index:
+            with open (pathname, mode='rb') as f:
+                data = f.read()
+            if data.startswith(b'\x1f\x8b'):
+                 data = gzip.decompress(data)
+            self.process(str(data, 'utf-8'), index, flush)
+        else:
+            print(f'cannot extract index name from key: {key}')
+
 
     def process_from_s3(self, bucket, key, flush=True):
         index = index_name(key)
