@@ -368,27 +368,47 @@ So instead, we extract the year and month from the key that CloudTrail uses to w
 event file. This is extracted via regular expression.
 
 
-# Uploading old events
+# Bulk Upload
 
-The Lambda responds to new files arriving on S3. If you had CloudTrail enabled, you'll already
-have events stored on S3. To load these files into Elasticsearch, you can invoke the loader from
-the command line.
+The Lambda responds to new files arriving on S3. However, if you had CloudTrail enabled,
+you'll already have events stored on S3. To load these files into Elasticsearch, you can
+use the bulk loader, which can read from S3 or a local directory.
 
-First, however, you need to set environment variables:
+1. Install all of the dependencies. You can use either of the Makefiles to do this.
 
-* `ES_HOSTNAME`: the hostname of the Elasticsearch cluster
-* `AWS_ACCESS_KEY_ID`: AWS access key
-* `AWS_SECRET_ACCESS_KEY`: AWS secret key
-* `AWS_REGION`: region where the Elasticsearch cluster resides
+2. Set the necessary environment variables:
 
-Then, run the bulk upload module to read all files from S3 with a given prefix (if you don't
-use a prefix to segregate CloudTrail from other log output, you can always use `cloudtrail`,
-which is the start of the AWS-defined prefix). The events are uploaded into monthly indexes,
-using the file's datestamp.
+    * `ES_HOSTNAME`: the hostname of the Elasticsearch cluster
+    * `AWS_ACCESS_KEY_ID`: your AWS access key
+    * `AWS_SECRET_ACCESS_KEY`: your AWS secret key
+    * `AWS_REGION`: region where the Elasticsearch cluster resides
 
-```
-src/bulk_upload.py BUCKET_NAME PREFIX
-```
+    Note: the AWS keys are used to explicitly authorize the Elasticsearch HTTPS requests,
+    so you can't just use a configured profile.
 
-Note that Elasticsearch updates are idempotent, based on the CloudTrail event ID, so you can run
-the upload scripts as many times as you'd like (you will, however, be charged for data transfer).
+3. Run the program:
+
+    ```
+    PYTHONPATH=`pwd`/build python -m cloudtrail_to_elasticsearch.bulk_upload --dates 2022-04-01 2022-04-30 --s3 my_bucket cloudtrail_prefix
+    ```
+
+    The `PYTHONPATH` configuration makes your dependencies available (if you're using Poetry,
+    you could alternatively use `poetry run`).
+
+    The `--dates` option specifies a starting and ending date; you should start with the
+    date of the first CloudTrail events loaded to your S3 bucket, and end with the current
+    date. Updates are idempotent, so you can (and should) overlap with any events that are
+    already in Elasticsearch. If you don't specify this parameter, the program will load
+    all events in your bucket -- which may take quite some time.
+
+    The `--s3` option tells the program to read from an S3 bucket and prefix; replace the
+    values shown here with those for your installation. If you've downloaded events, you
+    can use the option `--local` with the path of your download directory, and the program
+    will read event files from there.
+
+Assuming that you've done everything right, you should see a series of "processing"
+messages that let you know what file is being processed, interspersed with "writing
+events" messages that tell you how many events have been written in each batch. The
+number of files may be quite long; I recommend using the `tee` program and saving
+the output to a file to make sure there are no errors.
+
