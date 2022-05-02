@@ -41,7 +41,7 @@ class ESHelper:
     """
 
     def __init__(self, hostname=None, use_aws_auth=True, use_https=True, index_config=None, batch_size=500):
-        """ 
+        """
             hostname      If provided, the hostname of the Elasticsearch cluster. If not
                           provided, this is read from the environment variable ES_HOSTNAME.
             use_aws_auth  If true, uses AWS signed requests; if false, simple HTTP(S).
@@ -73,7 +73,7 @@ class ESHelper:
         self.batch_size = batch_size
         self.current_index = None
         self.batch = []
-    
+
 
     def add_events(self, events, index):
         """ Adds events to the batch for the specified index. If this causes the
@@ -99,10 +99,19 @@ class ESHelper:
         self.ensure_index_exists(self.current_index)
         updates = [self.prepare_event(event, self.current_index) for event in self.batch]
         rsp = self.do_request(requests.post, "_bulk", "".join(updates), 'application/x-ndjson')
-        self.log_upload_errors(rsp)
-        self.current_index = None
-        self.batch = []
-        
+        if rsp.status_code == 200:
+            # individual records may be rejected -- we'll assume them damaged and drop
+            self.log_record_errors(rsp)
+            self.current_index = None
+            self.batch = []
+        elif rsp.status_code == 429:
+            print(f'upload throttled; retrying')
+            # we'll hope that it succeeds before we blow stack
+            self.flush()
+        else:
+            # log the error, leave the events in queue for future attempt
+            print(f'upload failed: status {rsp.status_code}, description = {rsp.text}')
+
 
     def ensure_index_exists(self, index):
         """ Called before uploading a series of events, to verify that the index
@@ -130,7 +139,7 @@ class ESHelper:
             json.dumps(event)
             ]) + "\n"
 
-    
+
     def do_request(self, fn, path, body=None, content_type='application/json'):
         url = self.protocol + "://" + self.hostname + "/" + path
         kwargs = {}
@@ -141,12 +150,9 @@ class ESHelper:
             kwargs['auth'] = self.auth
         rsp = fn(url, **kwargs)
         return rsp
-    
-    
-    def log_upload_errors(self, rsp):
-        if rsp.status_code != 200:
-            print(f'upload failed: status {rsp.status_code}, description = {rsp.text}')
-            return
+
+
+    def log_record_errors(self, rsp):
         result = json.loads(rsp.text)
         if not result.get('errors'):
             print("no errors")
