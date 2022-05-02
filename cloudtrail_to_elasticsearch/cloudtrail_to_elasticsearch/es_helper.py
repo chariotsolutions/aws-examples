@@ -40,14 +40,12 @@ class ESHelper:
         mock instance.
     """
 
-    def __init__(self, hostname=None, use_aws_auth=True, use_https=True, mapping_type="_doc", index_config=None, batch_size=500):
+    def __init__(self, hostname=None, use_aws_auth=True, use_https=True, index_config=None, batch_size=500):
         """ 
             hostname      If provided, the hostname of the Elasticsearch cluster. If not
                           provided, this is read from the environment variable ES_HOSTNAME.
             use_aws_auth  If true, uses AWS signed requests; if false, simple HTTP(S).
             use_https     If true, uses HTTPS requests; if false, HTTP.
-            mapping_type  For Elasticsearch versions below 7.x, the type name used to store
-                          records. For later versions, the default (_doc) may be used.
             index_config  If provided, used to create a new index. This is a Python object
                           that corresponds to the Elasticsearch configuration JSON.
         """
@@ -72,7 +70,6 @@ class ESHelper:
         else:
             self.protocol = "http"
         self.index_config = index_config
-        self.mapping_type = mapping_type
         self.batch_size = batch_size
         self.current_index = None
         self.batch = []
@@ -129,7 +126,7 @@ class ESHelper:
 
     def prepare_event(self, event, index):
         return "\n".join([
-            json.dumps({ "index": { "_index": index, "_type": self.mapping_type, "_id": event['eventID'] }}),
+            json.dumps({ "index": { "_index": index, "_type": "_doc", "_id": event['eventID'] }}),
             json.dumps(event)
             ]) + "\n"
 
