@@ -4,25 +4,27 @@ to an Elasticsearch cluster.
 
 # Warnings and Caveats
 
-You will incur charges for the Elasticsearch cluster and Lambda invocations, as well
-as for S3 storage of the raw CloudTrail events. The provided CloudFormation template
-creates a stack using a single `t2.medium.elasticsearch` instance and 32 GB of disk. 
-This costs $1.75 per day plus storage charges of $0.32/month.
+**This version of the program only works for Elasticsearch versions 6.x**.
+Version 7 [introduced a breaking change](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/removal-of-types.html),
+in which it no longer supports defining mapping types when creating an index.
+However, version 6.x still requires a type name. This project is in the process
+of being updated to support version 7 and greater.
 
-AWS Managed Elasticsearch does not automatically clean up its indexes. You can use an
-[Index State Management](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ism.html)
+**You will incur charges for the Elasticsearch cluster and Lambda invocations**,
+as well as for S3 storage of the raw CloudTrail events. The provided CloudFormation
+template creates a stack using a single `t2.medium.elasticsearch` instance and
+32 GB of disk.  This costs $1.75 per day plus storage charges of $0.32/month.
+
+**AWS Managed Elasticsearch does not automatically clean up its indexes**. You can
+use an [Index State Management](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ism.html)
 Policy to delete old indexes, or manually delete them with an HTTP `DELETE` request.
 As configured, the Lambda creates one index for each month of data. How many indexes
 you can support will depend on your AWS API volume and the size of the cluster.
 
-Deleting the Lambda function -- either manually or by deleting the CloudFormation stack --
-does _not_ delete the event trigger. You must explicitly delete it by going to the S3
-bucket holding your CloudTrail events, clicking "Events" under the "Properties" tab,
-and then removing the notification.
-
-The current revision of this Lambda works with Elasticsearch version 6.8. The index
-creation code uses a "document type" that is incompatible with Elasticsearch 7.x or
-AWS OpenSearch. Updates are in the queue.
+**Deleting the Lambda function -- either manually or by deleting the CloudFormation
+stack -- does _not_ delete the event trigger**. You must explicitly delete it by going
+to the S3 bucket holding your CloudTrail events, clicking "Events" under the "Properties"
+tab, and then removing the notification.
 
 
 # Building and Deploying
