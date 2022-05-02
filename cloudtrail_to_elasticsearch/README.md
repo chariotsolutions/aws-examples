@@ -309,50 +309,46 @@ they should be.
 }
 ```
 
-The Lambda also configures the maximum number of allowed fields when creating the
-index. The value 8192 is far beyond what we've seen in our environment, but I went
-through several iterations of "oops, that wasn't enough" before just giving up and
-picking a big number.
+The Lambda also configures some basic index settings:
 
-```
-'settings': {
-    'index.mapping.total_fields.limit': 8192
-}
-```
+  * `'index.mapping.total_fields.limit': 8192`
 
-There are two additional settings that I haven't put into the code: number of shards
-per index and number of replicas per shard. With AWS Managed Elasticsearch 6.8, each
-index defaults to five shards, and one replica per shard. Unless you have enormouse
-volume, this is far too many shards: for time-series data (which logs are), Elastic
-recommends [20-40 GB per shard](https://www.elastic.co/blog/how-many-shards-should-i-have-in-my-elasticsearch-cluster).
+    One thing that I learned early-on is that there are a lot of different field
+    names in CloudTrail, and that the default value of 1,000 for this setting is
+    way too low. Across all indexes, we currenty have 4,695 distinct field names;
+    you may have more or fewer based on the services that you use.
 
-We've found that 1,000,000 CloudTrail events translates into approximately 1.2 GB,
-and our monthly usage is lower than that, so there's no reason for multiple shards.
-Moreover, our cluster runs on a single node (rather than pay for an extra node,
-we're willing to recover from snapshot if the cluser goes south). This means that
-there's no reason for shard replicas, as they won't be assigned to a node.
+  * `'index.number_of_shards': 1`
 
-If you are in a similar situation, edit the default index configuration (in
-`processor.py`), changing the settings to look like this:
+    Sizing of Elasticsearch indexes, including picking the number of shards for an
+    index, is somehing of a [dark art](https://www.elastic.co/guide/en/elasticsearch/reference/current/size-your-shards.html).
+    However, if you're using the default CloudFormation template in this project,
+    it doesn't make sense to have more than one shard per index, because all of
+    them will live on a single node.
 
-```
-'settings': {
-    'index.mapping.total_fields.limit': 8192,
-    'index.number_of_shards': 1,
-    'index.number_of_replicas': 0
-}
-```
+    If you have sufficient CloudTrail volume that you require more than one node to
+    store the events, then I recommend picking a number of shards equal to the
+    number of nodes. The reasoning for this is that most of your queries will be
+    against relatively recent data, so you will get a bigger benefit from running
+    those queries on all nodes.
+
+  * `'index.number_of_replicas': 0`
+
+    By default, AWS Opensearch creates indexes with replicas. On a single-node
+    cluster there's no place for those replicas to go. And given that the raw
+    event data is stored in S3, I think that there's little need to replicas in
+    any case. That will, of course, mean some amount of downtime if your cluster
+    ever fails, while you repopulate a new cluster.
 
 One last thing about index creation: the code will check to see if the index exists before
 trying to create it. That works great during "normal" operation, in which CloudTrail delivers
 one file at a time to S3. However, if you upload a large number of files at once, Lambda will
 scale up the number of executing functions to match the number of files, and this can cause a
-race condition between creation and use. With the end result that some Lambda invocations fail
-and are not retried.
+race condition between creation and use that results in an error.
 
-If you are doing a bulk upload, I recommend setting the reserved concurrency on the Lambda to
-1, which will prevent concurrent executions (but will take longer to complete). Or alternatively,
-pre-create the indexes to match the data that you're using.
+To solve this, I recommend setting reserved concurrency on the Lambda to 1, which will prevent
+concurrent executions. If you have a large number of CloudTrail files that already live on S3,
+Ir recommend using a [bulk upload](#bulk-upload).
 
 
 ## Index names

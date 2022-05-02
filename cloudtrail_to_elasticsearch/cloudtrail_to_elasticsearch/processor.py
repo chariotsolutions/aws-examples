@@ -35,7 +35,9 @@ DEFAULT_MAPPING_TYPE = "cloudtrail-event"
 
 DEFAULT_INDEX_CONFIG = json.dumps({
     'settings': {
-        'index.mapping.total_fields.limit': 8192
+        'index.mapping.total_fields.limit': 8192,
+        'index.number_of_shards': 1,
+        'index.number_of_replicas': 0
     },
     'mappings': {
         DEFAULT_MAPPING_TYPE: {
