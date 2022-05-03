@@ -31,14 +31,14 @@ from cloudtrail_to_elasticsearch.s3_helper import S3Helper
 
 # the index configuration that we'll use
 
-DEFAULT_MAPPING_TYPE = "cloudtrail-event"
-
 DEFAULT_INDEX_CONFIG = json.dumps({
     'settings': {
-        'index.mapping.total_fields.limit': 8192
+        'index.mapping.total_fields.limit': 8192,
+        'index.number_of_shards': 1,
+        'index.number_of_replicas': 0
     },
     'mappings': {
-        DEFAULT_MAPPING_TYPE: {
+        "_doc": {
             'dynamic_templates': [
                 {
                     'flattened_requestParameters': {
@@ -68,7 +68,7 @@ DEFAULT_INDEX_CONFIG = json.dumps({
 def create():
   """ Factory method to create a default instance.
   """
-  return Processor(ESHelper(mapping_type=DEFAULT_MAPPING_TYPE, index_config=DEFAULT_INDEX_CONFIG),
+  return Processor(ESHelper(index_config=DEFAULT_INDEX_CONFIG),
                    S3Helper())
 
 

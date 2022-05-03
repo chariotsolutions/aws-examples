@@ -26,7 +26,7 @@ Parameters:
   ElasticsearchInstanceType:
     Description:                        "Type of instance used for Elasticsearch cluster; default is useful for small environment"
     Type:                               "String"
-    Default:                            "t2.medium.elasticsearch"
+    Default:                            "t3.medium.elasticsearch"
 
   ElasticsearchStorageSize:
     Description:                        "Size of the Elasticsearch storage volume, in GB"
