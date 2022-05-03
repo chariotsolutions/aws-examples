@@ -18,18 +18,23 @@ Parameters:
     Type:                               "String"
     Default:                            ""
 
-  ElasticsearchDomainName:
-    Description:                        "Name for the Elasticsearch cluster (must be DNS-legal)"
+  OpenSearchDomainName:
+    Description:                        "Name for the OpenSearch cluster (must be DNS-legal)"
     Type:                               "String"
     Default:                            "cloudtrail-events"
 
-  ElasticsearchInstanceType:
-    Description:                        "Type of instance used for Elasticsearch cluster; default is useful for small environment"
+  OpenSearchInstanceType:
+    Description:                        "Type of instance used for OpenSearch cluster; default is useful for small environment"
     Type:                               "String"
-    Default:                            "t3.medium.elasticsearch"
+    Default:                            "t3.medium.search"
 
-  ElasticsearchStorageSize:
-    Description:                        "Size of the Elasticsearch storage volume, in GB"
+  OpenSearchStorageType:
+    Description:                        "Type of the OpenSearch storage volume (allowed types depend on instance type)"
+    Type:                               "String"
+    Default:                            "gp2"
+
+  OpenSearchStorageSize:
+    Description:                        "Size of the OpenSearch storage volume, in GB (allowed sizes depend on instance type)"
     Type:                               "Number"
     Default:                            32
 
@@ -42,23 +47,23 @@ Parameters:
 Resources:
 
   ##
-  ## Elasticsearch cluster
+  ## OpenSearch cluster
   ##
 
   ElasticSearchDomain:
-    Type:                               "AWS::Elasticsearch::Domain"
+    Type:                               "AWS::OpenSearchService::Domain"
     Properties:
-      DomainName:                       !Ref ElasticsearchDomainName
-      ElasticsearchVersion:             "6.8"
-      ElasticsearchClusterConfig:
-        InstanceType:                   !Ref ElasticsearchInstanceType
+      DomainName:                       !Ref OpenSearchDomainName
+      EngineVersion:                    "OpenSearch_1.2"
+      ClusterConfig:
+        InstanceType:                   !Ref OpenSearchInstanceType
         InstanceCount:                  1
         DedicatedMasterEnabled:         false
         ZoneAwarenessEnabled:           false
       EBSOptions:
         EBSEnabled:                     true
-        VolumeType:                     "gp2"
-        VolumeSize:                     !Ref ElasticsearchStorageSize
+        VolumeType:                     !Ref OpenSearchStorageType
+        VolumeSize:                     !Ref OpenSearchStorageSize
       SnapshotOptions:
         AutomatedSnapshotStartHour:     8
       AdvancedOptions:                  {
@@ -71,12 +76,12 @@ Resources:
             Effect:                     "Allow"
             Principal:                  { "AWS": !Sub "${AWS::AccountId}" }
             Action:                     "es:*"
-            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${ElasticsearchDomainName}/*"
+            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*"
           -
             Effect:                     "Allow"
             Principal:                  { "AWS": "*" }
             Action:                     "es:*"
-            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${ElasticsearchDomainName}/*"
+            Resource:                   !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomainName}/*"
             Condition:
               IpAddress:
                 aws:SourceIp:           !Ref AllowedIPs
