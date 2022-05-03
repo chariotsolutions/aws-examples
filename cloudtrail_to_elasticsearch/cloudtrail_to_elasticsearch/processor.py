@@ -38,28 +38,26 @@ DEFAULT_INDEX_CONFIG = json.dumps({
         'index.number_of_replicas': 0
     },
     'mappings': {
-        "_doc": {
-            'dynamic_templates': [
-                {
-                    'flattened_requestParameters': {
-                            'path_match': 'requestParameters_flattened.*',
-                            'mapping': { 'type': 'text' }
-                    }
-                }, {
-                    'flattened_responseElements': {
-                            'path_match': 'responseElements_flattened.*',
-                            'mapping': { 'type': 'text' }
-                    }
-                }, {
-                    'flattened_resources': {
-                            'path_match': 'resources_flattened.*',
-                            'mapping': { 'type': 'text' }
-                    }
+        'dynamic_templates': [
+            {
+                'flattened_requestParameters': {
+                        'path_match': 'requestParameters_flattened.*',
+                        'mapping': { 'type': 'text' }
                 }
-            ],
-            'properties': {
-                'apiVersion': { 'type': 'text' }
+            }, {
+                'flattened_responseElements': {
+                        'path_match': 'responseElements_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
+            }, {
+                'flattened_resources': {
+                        'path_match': 'resources_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
             }
+        ],
+        'properties': {
+            'apiVersion': { 'type': 'text' }
         }
     }
 })

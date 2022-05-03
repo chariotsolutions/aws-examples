@@ -135,7 +135,7 @@ class ESHelper:
 
     def prepare_event(self, event, index):
         return "\n".join([
-            json.dumps({ "index": { "_index": index, "_type": "_doc", "_id": event['eventID'] }}),
+            json.dumps({ "index": { "_index": index, "_id": event['eventID'] }}),
             json.dumps(event)
             ]) + "\n"
 

@@ -1,21 +1,19 @@
 This is a Lambda that processes CloudTrail log files from S3 and writes the events
-to an Elasticsearch cluster.
+to an OpenSearch/Elasticsearch cluster.
 
 
 # Warnings and Caveats
 
-**This version of the program only works for Elasticsearch versions 6.x**.
-Version 7 [introduced a breaking change](https://www.elastic.co/guide/en/elasticsearch/reference/7.17/removal-of-types.html),
+**This version of the program works with Amazon OpenSearch, or Elasticsearch versions
+7.x and above**.  Version 7 [introduced a breaking change](https://www.elastic.co/guide/en/elasticsearch/reference/7.0/removal-of-types.html),
 in which it no longer supports defining mapping types when creating an index.
-However, version 6.x still requires a type name. This project is in the process
-of being updated to support version 7 and greater.
 
-**You will incur charges for the Elasticsearch cluster and Lambda invocations**,
+**You will incur charges for the OpenSearch cluster and Lambda invocations**,
 as well as for S3 storage of the raw CloudTrail events. The provided CloudFormation
 template creates a stack using a single `t2.medium.elasticsearch` instance and
 32 GB of disk.  This costs $1.75 per day plus storage charges of $0.32/month.
 
-**AWS Managed Elasticsearch does not automatically clean up its indexes**. You can
+**Amazon OpenSearch does not automatically clean up its indexes**. You can
 use an [Index State Management](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ism.html)
 Policy to delete old indexes, or manually delete them with an HTTP `DELETE` request.
 As configured, the Lambda creates one index for each month of data. How many indexes
@@ -89,9 +87,9 @@ Deploying is a multi-step process:
    * If you're in an organization, create the bucket and trail in the organization root account, and
      enable for all child accounts.
 
-2. Create the Elasticsearch cluster and Lambda
+2. Create the OpenSearch cluster and Lambda
 
-   The [provided CloudFormation template](cloudformation.yml) will create the Elasticsearch cluster
+   The [provided CloudFormation template](cloudformation.yml) will create an Amazon OpenSearch cluster
    and Lambda outside a VPC. This template has several parameters, most of which are optional:
 
     * `LambdaName`:
@@ -107,24 +105,24 @@ Deploying is a multi-step process:
       ideas. If used, you must include the trailing slash on this value (eg, "cloudtrail/",
       not "cloudtrail").
 
-    * `ElasticsearchDomainName`:
-      (optional) The domain name for the Elasticsearch cluster. This must comply with DNS naming
+    * `OpenSearchDomainName`:
+      (optional) The domain name for the OpenSearch cluster. This must comply with DNS naming
       rules (ie, lowercase and with hyphens but no underscores). Default: `cloudtrail-events`.
 
-    * `ElasticsearchInstanceType`:
-      (optional) The type of instance to use for the Elasticsearch cluster. The default is
+    * `OpenSearchInstanceType`:
+      (optional) The type of instance to use for the OpenSearch cluster. The default is
       `t2.medium.elasticsearch`, which is sufficient for a few million events per month, but
       may need to be increased if you're in a high-activity organization.
 
-    * `ElasticsearchStorageSize`:
+    * `OpenSearchStorageSize`:
       (optional) The size of the storage volume, in gigabytes. The maximum size depends on the
       selected instance type; the default is 32.
       
     * `AllowedIPs`:
-      (optional) Used to construct a permissions policy for the Elasticsearch cluster that
-      allows access from browsers. You should specify the public IP address of your local
-      network, which you can find by Googleing for "what's my IP". If you have multiple public
-      IP addresses, list them all, separated by a comma. No default.
+      (optional) Used to construct a permissions policy for the OpenSearch cluster that allows
+      access from browsers. You should specify the public IP address of your local network,
+      which you can find by Googleing for "what's my IP". If you have multiple public IP
+      addresses, list them all, separated by a comma. No default.
 
    One of the annoying things about CloudFormation is that the `AWS::Lambda::Function` resource
    can either specify the Lambda deployment as 4k of literal text (confusingly named `ZipFile`)
@@ -278,7 +276,7 @@ the index -- and to _explicitly_ create it, rather than let Elasticsearch create
 first time you try to write data.
 
 Here is the default mapping that we use, which specifies an explicit mapping for `apiVersion`
-and [dynamic templates](https://www.elastic.co/guide/en/elasticsearch/reference/6.8/dynamic-templates.html)
+and [dynamic templates](https://www.elastic.co/guide/en/elasticsearch/reference/7.0/dynamic-templates.html)
 for the various "flattened" fields. These dynamic templates tell Elasticsearch that any
 fields that match the pattern should be indexed as text, regardless of what it thinks
 they should be.
@@ -376,13 +374,16 @@ use the bulk loader, which can read from S3 or a local directory.
 
 2. Set the necessary environment variables:
 
-    * `ES_HOSTNAME`: the hostname of the Elasticsearch cluster
+    * `ES_HOSTNAME`: the hostname of the OpenSearch cluster
     * `AWS_ACCESS_KEY_ID`: your AWS access key
     * `AWS_SECRET_ACCESS_KEY`: your AWS secret key
-    * `AWS_REGION`: region where the Elasticsearch cluster resides
+    * `AWS_REGION`: region where the OpenSearch cluster resides
 
-    Note: the AWS keys are used to explicitly authorize the Elasticsearch HTTPS requests,
+    Note 1: the AWS keys are used to explicitly authorize the OpenSearch HTTPS requests,
     so you can't just use a configured profile.
+
+    Note 2: the provided AWS credentials must have the `es:ESHttpGet`, `es:ESHttpPost`, and
+    `es:ESHttpPut` permissions on the OpenSearch cluster.
 
 3. Run the program:
 
@@ -396,7 +397,7 @@ use the bulk loader, which can read from S3 or a local directory.
     The `--dates` option specifies a starting and ending date; you should start with the
     date of the first CloudTrail events loaded to your S3 bucket, and end with the current
     date. Updates are idempotent, so you can (and should) overlap with any events that are
-    already in Elasticsearch. If you don't specify this parameter, the program will load
+    already in OpenSearch. If you don't specify this parameter, the program will load
     all events in your bucket -- which may take quite some time.
 
     The `--s3` option tells the program to read from an S3 bucket and prefix; replace the
