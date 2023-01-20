@@ -1,5 +1,7 @@
 # Two Buckets and a Lambda: a pattern for S3 file transformation
 
+**Currently being updated**
+
 This is the example code for [this blog post](https://chariotsolutions.com/blog/post/two-buckets-and-a-lambda-a-pattern-for-file-processing/). It implements a simple web-app in
 addition to the actual processor Lambda.
 

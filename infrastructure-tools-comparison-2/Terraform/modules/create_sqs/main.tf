@@ -1,4 +1,18 @@
-provider "aws" {}
+##
+## A module that creates an SQS queue, along with a related dead-letter queue,
+## and policies to read/write both
+##
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0.0"
+    }
+  }
+}
+
+data "aws_region" "current" {}
 
 
 resource "aws_sqs_queue" "base_queue" {
@@ -11,6 +25,7 @@ resource "aws_sqs_queue" "base_queue" {
                                 })
 }
 
+
 resource "aws_sqs_queue" "deadletter_queue" {
   name                        = "${var.queue_name}-DLQ"
   message_retention_seconds   = var.retention_period
@@ -19,10 +34,11 @@ resource "aws_sqs_queue" "deadletter_queue" {
 
 
 resource "aws_iam_policy" "consumer_policy" {
-  name        = "SQS-${var.queue_name}-Consumer"
-  description = "Attach this policy to consumers of ${var.queue_name}"
+  name        = "SQS-${var.queue_name}-${data.aws_region.current.name}-Consumer"
+  description = "Attach this policy to consumers of SQS queue ${var.queue_name}"
   policy      = data.aws_iam_policy_document.consumer_policy.json
 }
+
 
 data "aws_iam_policy_document" "consumer_policy" {
   statement {
@@ -44,10 +60,11 @@ data "aws_iam_policy_document" "consumer_policy" {
 
 
 resource "aws_iam_policy" "producer_policy" {
-  name        = "SQS-${var.queue_name}-Producer"
-  description = "Attach this policy to producers for ${var.queue_name}"
+  name        = "SQS-${var.queue_name}-${data.aws_region.current.name}-Producer"
+  description = "Attach this policy to producers for SQS queue ${var.queue_name}"
   policy      = data.aws_iam_policy_document.producer_policy.json
 }
+
 
 data "aws_iam_policy_document" "producer_policy" {
   statement {

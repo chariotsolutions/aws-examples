@@ -1,4 +1,4 @@
-FROM amazon/aws-lambda-python:3.8
+FROM amazon/aws-lambda-python:3.9
 
 RUN yum install -y make zip
 

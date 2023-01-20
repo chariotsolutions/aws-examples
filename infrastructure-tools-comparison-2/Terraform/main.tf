@@ -3,7 +3,17 @@
 ## then combines their policies into a role.
 ## 
 
-provider "aws" {}
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0.0"
+    }
+  }
+}
+
+data "aws_region" "current" {}
+
 
 module "foo_queue" {
   source = "./modules/create_sqs"
@@ -25,7 +35,8 @@ module "baz_queue" {
 
 
 resource "aws_iam_role" "application_role" {
-  name = "ApplicationRole"
+  name        = "Example-${data.aws_region.current.name}"
+  description = "Created by Terraform SQS module example"
 
   assume_role_policy = jsonencode({
     "Version"   = "2012-10-17",

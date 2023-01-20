@@ -63,21 +63,18 @@ Resources:
       AccessControl:                    "Private"
       CorsConfiguration:
         CorsRules:
-          -
-            AllowedMethods:             ["PUT", "POST"]   # POST is needed for multipart uploads
+          - AllowedMethods:             ["PUT", "POST"]   # POST is needed for multipart uploads
             AllowedOrigins:             [ "*" ]
             AllowedHeaders:             [ "*" ]
             ExposedHeaders:             [ "ETag" ]
       LifecycleConfiguration: 
         Rules:
-          -
-            Id:                         "DeleteUnprocessedUploads"
+          - Id:                         "DeleteUnprocessedUploads"
             ExpirationInDays:           1
             Status:                     "Enabled"
       NotificationConfiguration:
         LambdaConfigurations:
-          -
-            Event:                      "s3:ObjectCreated:*"
+          - Event:                      "s3:ObjectCreated:*"
             Function:                   !GetAtt ProcessorLambda.Arn
 
 
@@ -103,7 +100,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${AWS::StackName}-Processor-ExecutionRole"
+      RoleName:                         !Sub "${AWS::StackName}-Processor-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -115,8 +112,7 @@ Resources:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
         -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
-        -
-          PolicyName:                   "ReadFromSource"
+        - PolicyName:                   "ReadFromSource"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -126,8 +122,7 @@ Resources:
                 -                       "s3:GetObject"
               Resource:
                 -                       !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/*"
-        -
-          PolicyName:                   "WriteToDestination"
+        - PolicyName:                   "WriteToDestination"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -143,7 +138,7 @@ Resources:
       FunctionName:                     !Sub "${AWS::StackName}-Processor"
       Description:                      !Sub "Processes files uploaded to ${UploadBucketName} and moves them to ${ArchiveBucketName}"
       Role:                             !GetAtt ProcessorExecutionRole.Arn
-      Runtime:                          "python3.7"
+      Runtime:                          "python3.9"
       Handler:                          "index.lambda_handler"
       Code: 
         ZipFile:                        |
@@ -220,7 +215,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${AWS::StackName}-SignedUrl-ExecutionRole"
+      RoleName:                         !Sub "${AWS::StackName}-SignedUrl-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -232,8 +227,7 @@ Resources:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
         -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
-        -
-          PolicyName:                   "AllowUploads"
+        - PolicyName:                   "AllowUploads"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -249,7 +243,7 @@ Resources:
       FunctionName:                     !Sub "${AWS::StackName}-SignedUrl"
       Description:                      !Sub "Generates a signed URL when given a key"
       Role:                             !GetAtt SignedUrlLambdaExecutionRole.Arn
-      Runtime:                          "python3.7"
+      Runtime:                          "python3.9"
       Handler:                          "index.lambda_handler"
       Code: 
         ZipFile:                        |
@@ -322,7 +316,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${AWS::StackName}-Credentials-ExecutionRole"
+      RoleName:                         !Sub "${AWS::StackName}-Credentials-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -334,8 +328,7 @@ Resources:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
         -                               "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
       Policies:
-        -
-          PolicyName:                   "AssumeUploadRole"
+        - PolicyName:                   "AssumeUploadRole"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -349,7 +342,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${AWS::StackName}-Credentials-AssumedRole"
+      RoleName:                         !Sub "${AWS::StackName}-Credentials-AssumedRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -358,8 +351,7 @@ Resources:
             AWS:                        !Ref AWS::AccountId   # too broad but prevents circular dependency
           Action:                       "sts:AssumeRole"
       Policies:
-        -
-          PolicyName:                   "BaseUploadPermissions"
+        - PolicyName:                   "BaseUploadPermissions"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -375,7 +367,7 @@ Resources:
       FunctionName:                     !Sub "${AWS::StackName}-Credentials"
       Description:                      !Sub "Generates limited-scope credentials when given a key"
       Role:                             !GetAtt CredentialsLambdaExecutionRole.Arn
-      Runtime:                          "python3.7"
+      Runtime:                          "python3.9"
       Handler:                          "index.lambda_handler"
       Code: 
         ZipFile:                        |

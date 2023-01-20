@@ -1,3 +1,9 @@
-.terraform/
+# normally you would check this in; we don't because it's an example
+.terraform.lock.hcl
+
+# normally you would store state information externally; checking-in risks exposing secrets
 terraform.tfstate
 terraform.tfstate.backup
+
+# this is the local storage for Terraform modules and config; never check it in
+.terraform/

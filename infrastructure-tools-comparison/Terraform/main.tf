@@ -3,7 +3,22 @@
 ## permission to assume roles in associated accounts. 
 ## 
 
-provider "aws" {}
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0.0"
+    }
+  }
+}
+
+
+##
+## For this example, all configuration is hardcoded; could be replaced
+## with external variable definitions
+##
+
 
 data "aws_caller_identity" "current" {}
 

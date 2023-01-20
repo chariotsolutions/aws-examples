@@ -39,8 +39,7 @@ Resources:
       State:                            "DISABLED"
       ScheduleExpression:               !Ref Schedule
       Targets:
-        -
-          Id:                           "EC2-Cleanup"
+        - Id:                           "EC2-Cleanup"
           Arn:                          !GetAtt LambdaFunction.Arn
 
 
@@ -57,7 +56,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${FunctionName}-ExecutionRole"
+      RoleName:                         !Sub "${FunctionName}-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -68,8 +67,7 @@ Resources:
       ManagedPolicyArns:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
-        -
-          PolicyName:                   "AssumeRole"
+        - PolicyName:                   "AssumeRole"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -85,7 +83,7 @@ Resources:
       FunctionName:                     !Ref FunctionName
       Description:                      "Examines managed accounts to find forgotten EC2 instances"
       Role:                             !GetAtt LambdaRole.Arn
-      Runtime:                          "python3.7"
+      Runtime:                          "python3.9"
       Handler:                          "index.lambda_handler"
       MemorySize:                       256
       Timeout:                          60

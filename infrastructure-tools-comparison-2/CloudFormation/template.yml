@@ -48,13 +48,12 @@ Resources:
   ConsumerPolicy:
     Type:                               "AWS::IAM::ManagedPolicy"
     Properties:
-      ManagedPolicyName:                !Sub "SQS-${QueueName}-Consumer"
+      ManagedPolicyName:                !Sub "SQS-${QueueName}-${AWS::Region}-Consumer"
       Description:                      !Sub "Attach this policy to consumers of ${QueueName}"
       PolicyDocument:
         Version:                        "2012-10-17"
         Statement:
-          -
-            Effect:                     "Allow"
+          - Effect:                     "Allow"
             Action:
               -                         "sqs:ChangeMessageVisibility"
               -                         "sqs:ChangeMessageVisibilityBatch"
@@ -71,13 +70,12 @@ Resources:
   ProducerPolicy:
     Type:                               "AWS::IAM::ManagedPolicy"
     Properties:
-      ManagedPolicyName:                !Sub "SQS-${QueueName}-Producer"
+      ManagedPolicyName:                !Sub "SQS-${QueueName}-${AWS::Region}-Producer"
       Description:                      !Sub "Attach this policy to producers for ${QueueName}"
       PolicyDocument:
         Version:                        "2012-10-17"
         Statement:
-          -
-            Effect:                     "Allow"
+          - Effect:                     "Allow"
             Action:
               -                         "sqs:GetQueueAttributes"
               -                         "sqs:GetQueueUrl"

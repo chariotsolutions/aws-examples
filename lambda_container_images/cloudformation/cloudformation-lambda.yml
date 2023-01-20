@@ -32,7 +32,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${LambdaName}-ExecutionRole"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:

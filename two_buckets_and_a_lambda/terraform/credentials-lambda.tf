@@ -9,8 +9,8 @@ data archive_file credentials_archive {
 resource aws_lambda_function credentials_lambda {
     function_name = "${var.name_base}_credentials"
     role          = aws_iam_role.credentials_lambda_execution_role.arn
-    runtime       = "python3.7"
-    handler            = "credentials-lambda.lambda_handler"
+    runtime       = "python3.9"
+    handler       = "credentials-lambda.lambda_handler"
     filename      = "./credentials_archive.zip"
     source_code_hash  = "${data.archive_file.credentials_archive.output_base64sha256}"
     environment {
@@ -27,7 +27,7 @@ resource aws_cloudwatch_log_group credentials_lambda_log_group {
 }
 
 resource aws_iam_role credentials_lambda_execution_role {
-  name               = "${var.name_base}_lambda_exec_role_${local.aws_region}"
+  name               = "${var.name_base}-Credentials-ExecutionRole-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.credentials_exec_role_lambda_trust_policy.json
 }
@@ -71,8 +71,7 @@ data aws_iam_policy_document credentials_assumed_role_trust_policy {
 resource aws_iam_role credentials_assumed_role {
   assume_role_policy = data.aws_iam_policy_document.credentials_assumed_role_trust_policy.json
   inline_policy {
-    # change to match CloudFormation
-    name = "anameisrequired"
+    name = "WriteToDestination"
     policy = jsonencode({
         Version = "2012-10-17"
         Statement = [

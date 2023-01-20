@@ -71,8 +71,7 @@ Resources:
       GroupDescription:                 "Allows access to the database (nominally from application)"
       VpcId:                            !Ref VpcId
       SecurityGroupIngress:
-        -
-          Description:                  "Access from user network"
+        - Description:                  "Access from user network"
           IpProtocol:                   "tcp"
           FromPort:                     5432
           ToPort:                       5432

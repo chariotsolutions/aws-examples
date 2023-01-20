@@ -9,8 +9,8 @@ data archive_file signed_url_archive {
 resource aws_lambda_function signed_url_lambda {
     function_name = "${var.name_base}_signed_url"
     role          = aws_iam_role.signed_url_lambda_execution_role.arn
-    runtime       = "python3.7"
-    handler            = "signed-url-lambda.lambda_handler"
+    runtime       = "python3.9"
+    handler       = "signed-url-lambda.lambda_handler"
     filename      = "./signed_url_archive.zip"
     source_code_hash  = "${data.archive_file.signed_url_archive.output_base64sha256}"
     environment {
@@ -26,7 +26,7 @@ resource aws_cloudwatch_log_group signed_url_lambda_log_group {
 }
 
 resource aws_iam_role signed_url_lambda_execution_role {
-  name               = "${var.name_base}_signed_url_lambda_exec_role_${local.aws_region}"
+  name               = "${var.name_base}-SignedUrl-ExecutionRole-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.signed_url_exec_role_lambda_trust_policy.json
   inline_policy {

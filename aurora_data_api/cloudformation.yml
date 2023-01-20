@@ -96,7 +96,7 @@ Resources:
     Type:                               "AWS::IAM::Role"
     Properties:
       Path:                             "/lambda/"
-      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}-ExecutionRole"
+      RoleName:                         !Sub "${AWS::StackName}-ExecutionRole-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version:                        "2012-10-17"
         Statement:
@@ -129,7 +129,7 @@ Resources:
       FunctionName:                     !Ref AWS::StackName
       Description:                      "Responds to webhook events by updating a database"
       Role:                             !GetAtt LambdaRole.Arn
-      Runtime:                          "python3.8"
+      Runtime:                          "python3.9"
       Handler:                          "index.lambda_handler"
       Code: 
         ZipFile:                        |

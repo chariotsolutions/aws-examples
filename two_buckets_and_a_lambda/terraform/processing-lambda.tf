@@ -10,7 +10,7 @@ data archive_file processing_archive {
 resource aws_lambda_function processing_lambda {
     function_name = "${var.name_base}_processing"
     role          = aws_iam_role.processing_lambda_execution_role.arn
-    runtime       = "python3.7"
+    runtime       = "python3.9"
     handler       = "processing-lambda.lambda_handler"
     filename      = "./processing_archive.zip"
     source_code_hash  = "${data.archive_file.processing_archive.output_base64sha256}"
@@ -47,7 +47,7 @@ resource aws_s3_bucket_notification upload_bucket_notification {
 }
 
 resource aws_iam_role processing_lambda_execution_role {
-  name               = "${var.name_base}_processing_lambda_exec_role_${local.aws_region}"
+  name               = "${var.name_base}-Processing-ExecutionRole-${local.aws_region}"
   path               = "/lambda/"
   assume_role_policy = data.aws_iam_policy_document.processing_exec_role_lambda_trust_policy.json
   inline_policy {
