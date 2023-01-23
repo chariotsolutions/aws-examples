@@ -28,16 +28,6 @@ Parameters:
     Type:                               "String"
     Default:                            "false"
 
-  SignedUrlPathComponent:
-    Description:                        "The path component that identifies the SignedURL endpoint (this is a stack-wide constant)"
-    Type:                               "String"
-    Default:                            "signedurl"
-
-  CredentialsPathComponent:
-    Description:                        "The path component that identifies the Credentials endpoint (this is a stack-wide constant)"
-    Type:                               "String"
-    Default:                            "credentials"
-
 
 Conditions:
   EnableTracingCond:                    !Equals [ !Ref EnableTracing, "true" ]
@@ -225,12 +215,13 @@ Resources:
 
   SignedUrlLambdaPermission:
     Type:                               "AWS::Lambda::Permission"
-    DependsOn:                          [ SignedUrlLambda ]
+    DependsOn:                          [ SignedUrlLambda, APIGateway ]
     Properties:
       Action:                           "lambda:InvokeFunction"
       FunctionName:                     !GetAtt SignedUrlLambda.Arn
       Principal:                        "apigateway.amazonaws.com"
-      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/POST/api/${SignedUrlPathComponent}"
+      # FIXME?
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*"
 
   ##
   ## A Lambda that generates limited-scope credentials
@@ -317,134 +308,144 @@ Resources:
 
   CredentialsLambdaPermission:
     Type:                               "AWS::Lambda::Permission"
-    DependsOn:                          [ CredentialsLambda ]
+    DependsOn:                          [ CredentialsLambda, APIGateway ]
     Properties:
       Action:                           "lambda:InvokeFunction"
       FunctionName:                     !GetAtt CredentialsLambda.Arn
       Principal:                        "apigateway.amazonaws.com"
-      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/POST/api/${CredentialsPathComponent}"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*"
 
 
-  ###
-  ### API Gateway
-  ###
 
-  APIGatewayDeployment:
-    Type:                               "AWS::ApiGateway::Deployment"
-    DependsOn:                          [ APIGatewayRootMethod, APIGatewayStaticMethod, APIGatewaySignedUrlMethod, APIGatewayCredentialsMethod ]
-    Properties: 
-      Description:                      "Deployment of the Two Buckets and a Lambda example"
-      RestApiId:                        !Ref APIGateway
-      StageName:                        !Ref DeploymentStageName
-      StageDescription:
-        TracingEnabled:                 !Ref EnableTracing
+  SignedUrlLambdaPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ SignedUrlLambda, APIGateway ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt SignedUrlLambda.Arn
+      Principal:                        "apigateway.amazonaws.com"
+      # FIXME?
 
+##
+## API Gateway
+##
 
   APIGateway:
-    Type:                               "AWS::ApiGateway::RestApi"
+    Type:                               "AWS::ApiGatewayV2::Api"
     Properties: 
       Name:                             !Sub "${AWS::StackName}"
-      Description:                      "Endpoint for the Two Buckets and a Lambda example"
-      EndpointConfiguration: 
-        Types:                          [ "REGIONAL" ]
+      Description:                      "Two Buckets and a Lambda Web-App"
+      ProtocolType:                     "HTTP"
 
 
-  APIGatewayStaticResource:
-    Type:                               "AWS::ApiGateway::Resource"
+  APIGatewayRootRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
     Properties: 
-      RestApiId:                        !Ref APIGateway
-      ParentId:                         !GetAtt APIGateway.RootResourceId
-      PathPart:                         "{proxy+}"
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "GET /"
+      Target:                           !Sub "integrations/${APIGatewayRootIntegration}"
 
 
-  APIGatewayAPIResource:
-    Type:                               "AWS::ApiGateway::Resource"
+  APIGatewayRootIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
     Properties: 
-      RestApiId:                        !Ref APIGateway
-      ParentId:                         !GetAtt APIGateway.RootResourceId
-      PathPart:                         "api"
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles the root route"
+      IntegrationMethod:                "GET"
+      IntegrationType:                  "HTTP_PROXY"
+      IntegrationUri:                   !Sub "https://${StaticBucket.DomainName}/index.html"
+      PayloadFormatVersion:             "1.0"
 
 
-  APIGatewaySignedUrlResource:
-    Type:                               "AWS::ApiGateway::Resource"
+  APIGatewayStaticContentRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
     Properties: 
-      RestApiId:                        !Ref APIGateway
-      ParentId:                         !Ref APIGatewayAPIResource
-      PathPart:                         !Ref SignedUrlPathComponent
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "GET /{proxy+}"
+      Target:                           !Sub "integrations/${APIGatewayStaticContentIntegration}"
 
 
-  APIGatewayCredentialsResource:
-    Type:                               "AWS::ApiGateway::Resource"
+  APIGatewayStaticContentIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
     Properties: 
-      RestApiId:                        !Ref APIGateway
-      ParentId:                         !Ref APIGatewayAPIResource
-      PathPart:                         !Ref CredentialsPathComponent
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles all requests for static content"
+      IntegrationMethod:                "GET"
+      IntegrationType:                  "HTTP_PROXY"
+      IntegrationUri:                   !Sub "https://${StaticBucket.DomainName}/{proxy}"
+      PayloadFormatVersion:             "1.0"
 
 
-  APIGatewayRootMethod:
-    Type:                               "AWS::ApiGateway::Method"
+  APIGatewaySignedUrlRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
     Properties: 
-      OperationName:                    "DefaultIndexHtml"
-      RestApiId:                        !Ref APIGateway
-      ResourceId:                       !GetAtt APIGateway.RootResourceId
-      HttpMethod:                       "GET"
-      AuthorizationType:                "NONE"
-      Integration: 
-        Type:                           "HTTP_PROXY"
-        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/index.html"
-        IntegrationHttpMethod:          "GET"
-        PassthroughBehavior:            "WHEN_NO_MATCH"
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "POST /api/signedurl"
+      Target:                           !Sub "integrations/${APIGatewaySignedUrlIntegration}"
 
 
-  APIGatewayStaticMethod:
-    Type:                               "AWS::ApiGateway::Method"
+  APIGatewaySignedUrlIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
     Properties: 
-      OperationName:                    "StaticContent"
-      RestApiId:                        !Ref APIGateway
-      ResourceId:                       !Ref APIGatewayStaticResource
-      HttpMethod:                       "GET"
-      AuthorizationType:                "NONE"
-      RequestParameters:
-        method.request.path.proxy:      true
-      Integration: 
-        Type:                           "HTTP_PROXY"
-        Uri:                            !Sub "https://${StaticBucketName}.s3.amazonaws.com/{proxy}"
-        IntegrationHttpMethod:          "GET"
-        RequestParameters:
-          integration.request.path.proxy: "method.request.path.proxy"
-        PassthroughBehavior:            "WHEN_NO_MATCH"
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles requests for a signed URL"
+      IntegrationMethod:                "POST"
+      IntegrationType:                  "AWS_PROXY"
+      IntegrationUri:                   !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SignedUrlLambda.Arn}/invocations"
+      PayloadFormatVersion:             "1.0"
 
 
-  APIGatewaySignedUrlMethod:
-    Type:                               "AWS::ApiGateway::Method"
+  APIGatewayCredentialsRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
     Properties: 
-      OperationName:                    "RetrieveSignedUrl"
-      RestApiId:                        !Ref APIGateway
-      ResourceId:                       !Ref APIGatewaySignedUrlResource
-      HttpMethod:                       "POST"
-      AuthorizationType:                "NONE"
-      Integration: 
-        Type:                           "AWS_PROXY"
-        Uri:                            !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SignedUrlLambda}/invocations"
-        IntegrationHttpMethod:          "POST"
-        ContentHandling:                "CONVERT_TO_TEXT"
-        PassthroughBehavior:            "WHEN_NO_MATCH"
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "POST /api/credentials"
+      Target:                           !Sub "integrations/${APIGatewayCredentialsIntegration}"
 
 
-  APIGatewayCredentialsMethod:
-    Type:                               "AWS::ApiGateway::Method"
+  APIGatewayCredentialsIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
     Properties: 
-      OperationName:                    "RetrieveCredentials"
-      RestApiId:                        !Ref APIGateway
-      ResourceId:                       !Ref APIGatewayCredentialsResource
-      HttpMethod:                       "POST"
-      AuthorizationType:                "NONE"
-      Integration: 
-        Type:                           "AWS_PROXY"
-        Uri:                            !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${CredentialsLambda}/invocations"
-        IntegrationHttpMethod:          "POST"
-        ContentHandling:                "CONVERT_TO_TEXT"
-        PassthroughBehavior:            "WHEN_NO_MATCH"
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles requests for temporary credentials"
+      IntegrationMethod:                "POST"
+      IntegrationType:                  "AWS_PROXY"
+      IntegrationUri:                   !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CredentialsLambda.Arn}/invocations"
+      PayloadFormatVersion:             "1.0"
+
+
+  APIGatewayDefaultStage:
+    Type:                               "AWS::ApiGatewayV2::Stage"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      StageName:                        "$default"
+      Description:                      "Default auto-deployed stage"
+      AutoDeploy:                       true
+      AccessLogSettings: 
+        DestinationArn:                 !GetAtt APIGatewayAccessLog.Arn
+        Format:                         !Join 
+          -                             " "
+          - -                           '{'
+            -                           '"requestId": "$context.requestId",'
+            -                           '"ip": "$context.identity.sourceIp",'
+            -                           '"requestTime": "$context.requestTime",'
+            -                           '"httpMethod": "$context.httpMethod",'
+            -                           '"path": "$context.path",'
+            -                           '"routeKey": "$context.routeKey",'
+            -                           '"status": "$context.status",'
+            -                           '"protocol": "$context.protocol",'
+            -                           '"responseLength": "$context.responseLength",'
+            -                           '"context.integration.error": "$context.integration.error",'
+            -                           '"context.integration.status": "$context.integration.status"'
+            -                           "}"
+
+
+  APIGatewayAccessLog:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/apigateway/${AWS::StackName}"
+      RetentionInDays:                  7
 
 
 Outputs:
@@ -463,4 +464,4 @@ Outputs:
 
   APIGatewayUrl:
     Description:                        "The root URL for the example"
-    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/${DeploymentStageName}/index.html"
+    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/"
