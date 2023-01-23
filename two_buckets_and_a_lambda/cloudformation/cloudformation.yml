@@ -38,6 +38,7 @@ Parameters:
     Type:                               "String"
     Default:                            "credentials"
 
+
 Conditions:
   EnableTracingCond:                    !Equals [ !Ref EnableTracing, "true" ]
 
@@ -139,7 +140,7 @@ Resources:
       Description:                      !Sub "Processes files uploaded to ${UploadBucketName} and moves them to ${ArchiveBucketName}"
       Role:                             !GetAtt ProcessorExecutionRole.Arn
       Runtime:                          "python3.9"
-      Handler:                          "index.lambda_handler"
+      Handler:                          "processor.lambda_handler"
       Code: 
         ZipFile:                        |
                                         def lambda_handler(event, context):
@@ -208,7 +209,7 @@ Resources:
       Description:                      !Sub "Generates a signed URL when given a key"
       Role:                             !GetAtt SignedUrlLambdaExecutionRole.Arn
       Runtime:                          "python3.9"
-      Handler:                          "index.lambda_handler"
+      Handler:                          "signed_url.lambda_handler"
       Code: 
         ZipFile:                        |
                                         def lambda_handler(event, context):
@@ -299,7 +300,7 @@ Resources:
       Description:                      !Sub "Generates limited-scope credentials when given a key"
       Role:                             !GetAtt CredentialsLambdaExecutionRole.Arn
       Runtime:                          "python3.9"
-      Handler:                          "index.lambda_handler"
+      Handler:                          "credentials.lambda_handler"
       Code: 
         ZipFile:                        |
                                         def lambda_handler(event, context):
@@ -447,6 +448,18 @@ Resources:
 
 
 Outputs:
+
+  ProcessorLambdaName:
+    Description:                        "Name of the Lambda that processes new files"
+    Value:                              !Ref ProcessorLambda
+
+  CredentialsLambdaName:
+    Description:                        "Name of the Lambda that returns temporary credentials"
+    Value:                              !Ref CredentialsLambda
+
+  SignedUrlLambdaName:
+    Description:                        "Name of the Lambda that returns a signed URL"
+    Value:                              !Ref SignedUrlLambda
 
   APIGatewayUrl:
     Description:                        "The root URL for the example"

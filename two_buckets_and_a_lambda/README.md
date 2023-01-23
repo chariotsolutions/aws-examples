@@ -2,20 +2,40 @@
 
 **Currently being updated**
 
-This is the example code for [this blog post](https://chariotsolutions.com/blog/post/two-buckets-and-a-lambda-a-pattern-for-file-processing/). It implements a simple web-app in
-addition to the actual processor Lambda.
+This is the example code for [this blog post](https://chariotsolutions.com/blog/post/two-buckets-and-a-lambda-a-pattern-for-file-processing/).
+It implements a simple web-app to provide users the ability to upload files, in addition to the actual processor Lambda.
 
 ![Architecture Diagram](static/images/webapp-architecture.png)
 
 
-## Deploy
+## Deployment
 
-There's a single [CloudFormation](scripts/cloudformation.yml) script that creates all
-of the components. However, the sample web-app requires some static HTML and JavaScript,
-so there's a deployment script (you must have the AWS CLI installed to run this):
+This example supports deployment with either CloudFormation or Terraform. Each is in
+its own directory, and the instructions below assume that you're running the relevant
+scripts from inside the directory.
+
+In either case, it creates the following resources (along with related resources such
+as IAM roles):
+
+* Three buckets: one to hold new uploads, one to hold processed files, and one to
+  hold static content for the web-app.
+
+* Three Lambdas: one to perform processing on uploaded files, and two that act as
+  API endpoints to provide credentials or a signed URL.
+
+* An HTTP Gateway (API Gateway v2) that provides a simple web-app to allow users
+  to upload files.
+
+
+### CloudFormation
+
+In order to keep the deployment self-contained and single-step, the CloudFormation
+deployment uses a shell script to upload static content and deploy the Lambda code.
+
+From within the `cloudformation` directory:
 
 ```
-scripts/deploy.sh STACK_NAME BASE_BUCKET_NAME
+./deploy.sh STACK_NAME BASE_BUCKET_NAME
 ```
 
 * `STACK_NAME` is the name for your stack; it must be unique within the account/region.
@@ -25,12 +45,26 @@ scripts/deploy.sh STACK_NAME BASE_BUCKET_NAME
   reverse domain name that includes the stack name: `com-example-mystack` (note that bucket
   names must be lowercase).
 
-This script should take less than five minutes to run. However, it uses the CLI's "wait"
-command, which doesn't time out until an hour has elapsed. You can either get the status
-of the stack via the CLI in another window, or watch the creation events in the console.
+All resources created by the stack are named after the stack (except the buckets, due to
+the requirement for DNS-compatible naming).
 
-When it's done, it will write the HTTPS endpoint of the example. You can then open that
-link in your browser.
+The stack should take less than five minutes to create. However, the script uses the CLI
+"wait" command, which doesn't time out until an hour has elapsed. You can either get the
+status of the stack via the CLI in another window, or watch the creation events in the
+console.
+
+When it's done, it will write the HTTPS endpoint of the example web-app. You can then
+open that link in your browser.
+
+To tear down the stack run the "undeploy" script, which force-deletes the S3 buckets and
+uses CloudFormation to delete the other resources:
+
+```
+./undeploy.sh STACK_NAME BASE_BUCKET_NAME
+```
+
+
+### Terraform
 
 
 ## Use
@@ -50,17 +84,9 @@ Feel free to extract the temporary credentials from the API response and try to 
 to upload another file.
 
 
-## Undeploy
-
-The counterpart of the deploy script is the undeploy script. This will force-delete all 
-of the buckets and then delete the CloudFormation stack.
-
-```
-scripts/undeploy.sh STACK_NAME BASE_BUCKET_NAME
-```
-
-
 ## Implementation Notes
+
+### Example Web-App
 
 In addition to demonstrating the "two buckets" processing Lambda, this example also provides
 examples of uploading the files to S3. It is implemented as a simple web-app, using API
@@ -91,3 +117,5 @@ When the JavaScript file is loaded, `window.location.href` contains the URL of t
 page: `https://fq14qko999.execute-api.us-east-1.amazonaws.com/dev/index.html` in this
 case. So the regex strips off the `index.html` part, and `queryUrl` adds the hardcoded
 path to the relevant Lambda endpoint.
+
+### Role chaining
