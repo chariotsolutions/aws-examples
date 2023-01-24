@@ -18,8 +18,6 @@
 ##
 ################################################################################################
 
-set -x
-
 if [[ $# -ne 2 ]] ; then
     echo "invocation: deploy.sh STACK_NAME BASE_BUCKET_NAME"
     exit 1

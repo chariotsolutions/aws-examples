@@ -18,11 +18,6 @@ Parameters:
     Type:                               "String"
     Default:                            ""
 
-  DeploymentStageName:
-    Description:                        "Identifies the initial deployment stage for API Gateway"
-    Type:                               "String"
-    Default:                            "dev"
-
   EnableTracing:
     Description:                        "Set to true to enable X-Ray tracing of all requests"
     Type:                               "String"
@@ -43,7 +38,7 @@ Resources:
     Type:                               "AWS::S3::Bucket"
     Properties: 
       BucketName:                       !Ref StaticBucketName
-      AccessControl:                    "Private"
+      AccessControl:                    "PublicRead"
 
 
   UploadBucket:
@@ -197,7 +192,7 @@ Resources:
     Type:                               "AWS::Lambda::Function"
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-SignedUrl"
-      Description:                      !Sub "Generates a signed URL when given a key"
+      Description:                      !Sub "Generates a signed URL that allows direct PUTs to bucket ${UploadBucketName}"
       Role:                             !GetAtt SignedUrlLambdaExecutionRole.Arn
       Runtime:                          "python3.9"
       Handler:                          "signed_url.lambda_handler"
@@ -289,7 +284,7 @@ Resources:
     Type:                               "AWS::Lambda::Function"
     Properties: 
       FunctionName:                     !Sub "${AWS::StackName}-Credentials"
-      Description:                      !Sub "Generates limited-scope credentials when given a key"
+      Description:                      !Sub "Generates limited-scope credentials that allow SDK uploads to bucket ${UploadBucketName}"
       Role:                             !GetAtt CredentialsLambdaExecutionRole.Arn
       Runtime:                          "python3.9"
       Handler:                          "credentials.lambda_handler"
