@@ -60,8 +60,9 @@ Resources:
             ExposedHeaders:             [ "ETag" ]
       LifecycleConfiguration: 
         Rules:
-          - Id:                         "DeleteUnprocessedUploads"
-            ExpirationInDays:           1
+          - Id:                         "DeleteIncompleteMultipartUploads"
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation:      1
             Status:                     "Enabled"
       NotificationConfiguration:
         LambdaConfigurations:
