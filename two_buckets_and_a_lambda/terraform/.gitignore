@@ -1,6 +1,11 @@
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
 *.zip
 
+# terraform cache; should never be checked in
+.terraform/
+
+# this would normally be checked in, but isn't because this is an example
+.terraform.lock.hcl
+
+# for real-world usage, state should be stored externally
+terraform.tfstate
+terraform.tfstate.backup

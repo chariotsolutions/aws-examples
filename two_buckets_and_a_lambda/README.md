@@ -66,6 +66,36 @@ uses CloudFormation to delete the other resources:
 
 ### Terraform
 
+Start by installing required modules. From within the `terraform` directory:
+
+```
+terraform init
+```
+
+Then, to deploy the application, replacing variables as appropriate:
+
+```
+terraform apply --var=base_bucket_name=BASE_BUCKET_NAME
+```
+
+To destroy the resources:
+
+```
+terraform destroy --var=base_bucket_name=BASE_BUCKET_NAME
+```
+
+Notes:
+
+* The buckets have `force_destroy` set to `true` so that they can be torn down without
+  manual intervention. For a real-world deployment, you would _not_ do this.
+
+* The Terraform config also uploads static content for the web-app. For this example,
+  that's only three files; it might not be practical for a real-world deployment.
+
+* The Lambdas are created with a custom module that is part of the source tree. This
+  module is tailored to the specific use-case of a single-file Lambda handler that's
+  external to the Terraform source subtree.
+
 
 ## Use
 
