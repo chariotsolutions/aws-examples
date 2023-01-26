@@ -5,7 +5,7 @@
 This is the example code for [this blog post](https://chariotsolutions.com/blog/post/two-buckets-and-a-lambda-a-pattern-for-file-processing/).
 It implements a simple web-app to provide users the ability to upload files, in addition to the actual processor Lambda.
 
-![Architecture Diagram](static/images/webapp-architecture.png)
+![Architecture Diagram](docs/webapp-architecture.png)
 
 
 ## Deployment
@@ -102,13 +102,14 @@ Notes:
 If you go to the link, you'll see the rather uninspiring UI shown below. I recommend also
 opening your browser's Developer Tools, so that you can see the console and network traffic.
 
-![Two Buckets UI](static/images/webapp-ui.png)
+![Two Buckets UI](docs/webapp-ui.png)
 
 Click "Browse" to select a file, then either "Upload via signed URL" or "Upload via
 restricted credentials" to upload that file to the staging bucket.
 
 If you look at the staging bucket in the AWS console, you probably won't find your file
-there: it will be in the archive bucket, and there will be a message in CloudWatch logs.
+there: the Processing Lambda runs quickly. Instead, the file will be in the archive bucket,
+and there will be a message in the log for the Processing Lambda.
 
 Feel free to extract the temporary credentials from the API response and try to use them
 to upload another file.
@@ -118,15 +119,22 @@ to upload another file.
 
 ### Example Web-App
 
-In addition to demonstrating the "two buckets" processing Lambda, this example also provides
-examples of uploading the files to S3. It is implemented as a simple web-app, using API
-Gateway to serve both static content and two Lambda-backed endpoints (`/api/credentials`
-and `/api/signedurl`). To simplify the example, I use "proxy" integations for all three.
+In addition to the "processing" Lambda, this project also demonstrates two ways to upload
+a file from the browser to S3:
 
-The client-side JavaScript code is intended as a tutorial, so breaks out the various steps
-as separate functions and does not rely on chained promises. It also creates the two
+* A signed URL, which allows anyone with the URL to upload a file using built-in browser
+  functionality. The URL is limited to a single named file (S3 key), with a specified
+  content type, uploaded via HTTP PUT. I do not set an expiration time, but the URL is
+  effectively limited by the expiration of the Lambda's credentials.
+
+* Limited-scope credentals, which lets the browser use the AWS JavaScript SDK to perform
+  the upload. These credentials are again limited to a single file, but give the caller
+  the flexibility to set content-type and other metadata, and to use a multi-part upload.
+
+The client-side JavaScript doesn't try to be too clever: it breaks out the various steps
+as separate functions, and does not rely on chained promises. It also creates the two
 operational functions in global scope, and explicitly attaches them to the buttons in HTML.
-Scroll to the end of the file to see this function.
+I'll be honest, I use JavaScript under duress.
 
 There is one bit of the JavaScript that requires some extra explanation
 
@@ -135,17 +143,43 @@ const rootUrl = window.location.href.replace(/[^/]*$/, "");
 const queryUrl = rootUrl + "api/signedurl";
 ```
 
-One of the quirks of API Gateway is that it deploys "stages": you can have a development
-stage and a production stage of the same API (or, more realistically, a `v1` and `v2`
-stage). When you do this, the stage name is part of the URL:
-`https://fq14qko999.execute-api.us-east-1.amazonaws.com/dev/api/credentials`. In a
-typical web-app, you would refer to an endpoint within JavaScript or HTML without
-the hostname: `/api/credentials`. However, this will fail when running with API Gateway,
-_except in the case where you're using a custom domain name to access the endpoint._
+This code is an artifact of the original (API Gateway V1) implementation, which appends
+a "stage" name to all URLs. API Gateway v2 supports a "default" stage that uses the root
+URL without suffix. However, to maximize portability, I've decided to leave this
+suffix-trimming code in place.
 
-When the JavaScript file is loaded, `window.location.href` contains the URL of the web
-page: `https://fq14qko999.execute-api.us-east-1.amazonaws.com/dev/index.html` in this
-case. So the regex strips off the `index.html` part, and `queryUrl` adds the hardcoded
-path to the relevant Lambda endpoint.
 
-### Role chaining
+### JavaScript SDK v2 versus v3
+
+This example uses the version 2 JavaScript SDK, retrieved from Amazon's distribution
+site. This is a large download (over 2 MB), as it supports for all AWS services.
+
+The version 3 SDK is modular, but [requires a build step](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/welcome.html#welcome_web)
+that packages the client code for services that you use. While this makes sense for a
+production application, it would make this example needlessly complex.
+
+
+### Credential Timeouts
+
+Both the presigned URL and the limited-scope credentials are only valid for a limited
+time. In the case of a presigned URL, that timeout depends on the expiration of the
+credentials used to sign the URL. The Signed URL Lambda execution role has a default
+session limit of one hour, so that's your effective limit (although when I looked at 
+CloudTrail, it seemed to indicate that the session was valid for 12 hours!).
+
+In the case of the limited-scope credentials, the story is more complex: the Lambda
+assumes a role in order to get the scoped credentials, which means that it's subject to
+[role chaining](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_terms-and-concepts.html#iam-term-role-chaining),
+which limits the maximum session duration of the assumed role to one hour. While this
+is fine for basic PUT operations, it might cause a large multi-part upload to fail
+(depending on the size of the file and your upload bandwidth).
+
+Since role chaining only applies when you use one role to assume another, you can 
+get the full duration of the assumed role by using long-lived credentials (ie, those
+associated with an IAM user), 
+
+If this is something that you need to do, I recommend creating an "upload" user, whose
+permissions are restricted to assuming the "credentials assumed role" (created by the
+deployment script). Create access keys for this user, and store them in Secrets Manager.
+Then change the Credentials Lambda to create an STS client using those keys, rather than
+the default.
