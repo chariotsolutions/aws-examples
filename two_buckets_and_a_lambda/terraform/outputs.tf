@@ -1,3 +1,5 @@
-output url-for-index-page {
-  value = "${aws_apigatewayv2_api.api.api_endpoint}/index.html"
+output "api_gateway_url" {
+  description   = "The root URL for the example"
+  value         = aws_apigatewayv2_api.main.api_endpoint
 }
+

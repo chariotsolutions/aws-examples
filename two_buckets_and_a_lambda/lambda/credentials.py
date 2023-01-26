@@ -1,3 +1,9 @@
+""" Credentials Lambda.
+
+    This Lambda assumes a role that has permissions to upload a single file, and returns
+    the credentials for that role session to the caller.
+    """
+
 import boto3
 import json
 import logging
@@ -7,7 +13,7 @@ bucket = os.environ['UPLOAD_BUCKET']
 role_arn = os.environ['ASSUMED_ROLE_ARN']
 
 sts_client = boto3.client('sts')
-                                        
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) 
 
@@ -15,7 +21,7 @@ def lambda_handler(event, context):
     body = json.loads(event['body'])
     key = body['key']
 
-    session_name = f"{context.aws_request_id}"
+    session_name = f"{context.function_name}-{context.aws_request_id}"
     session_policy = {
         'Version': '2012-10-17',
         'Statement': [
@@ -28,7 +34,6 @@ def lambda_handler(event, context):
     }
     
     logger.info(f"generating restricted credentials for: s3://{bucket}/{key} for session {session_name}")
-    logger.info(f"role_arn is {role_arn}")
     
     response = sts_client.assume_role(
         RoleArn=role_arn,

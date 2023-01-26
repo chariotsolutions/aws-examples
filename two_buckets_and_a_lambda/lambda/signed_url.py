@@ -1,3 +1,9 @@
+""" Presigned URL Lambda
+
+    This Lambda uses its own credentials to create a presigned URL that will allow
+    the user to upload a file to S3.
+    """
+
 import boto3
 import json
 import logging
@@ -18,18 +24,18 @@ def lambda_handler(event, context):
     logger.info(f"generating presigned URL for: s3://{bucket}/{key} ({content_type})")
     
     params = {
-	'Bucket':      bucket,
-	'Key':         key,
-	'ContentType': content_type
+        'Bucket':      bucket,
+        'Key':         key,
+        'ContentType': content_type
     }
     url = s3_client.generate_presigned_url('put_object', params)
     
     return {
-	'statusCode': 200,
-	'headers': {
-	    'Content-Type': 'application/json'
-	},
-	'body': json.dumps({
-	    'url': url
-	})
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/json'
+        },
+        'body': json.dumps({
+            'url': url
+        })
     }

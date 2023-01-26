@@ -7,8 +7,8 @@ const signedUrlUpload = (function() {
     const rootUrl = window.location.href.replace(/[^/]*$/, "");
     const queryUrl = rootUrl + "api/signedurl";
 
-    async function requestSignedUrl(selectedFile) {
-        console.log("requesting URL for " + selectedFile.name);
+    async function requestSignedUrl(fileName, fileType) {
+        console.log("requesting URL for " + fileName);
         const request = {
             method: 'POST',
             cache: 'no-cache',
@@ -16,8 +16,8 @@ const signedUrlUpload = (function() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                key: selectedFile.name,
-                type: selectedFile.type
+                key: fileName,
+                type: fileType
             })
         };
         const response = await fetch(queryUrl, request);
@@ -36,18 +36,18 @@ const signedUrlUpload = (function() {
             const reader = new FileReader();
             reader.onload = (e) => success(e.target.result);
             reader.onabort = failure;
-            reader.readAsBinaryString(selectedFile);
+            reader.readAsArrayBuffer(selectedFile);
         });
     }
 
-    async function uploadFile(selectedFile, content, url) {
-        console.log("uploading " + selectedFile.name);
+    async function uploadFile(fileName, fileType, content, url) {
+        console.log("uploading " + fileName);
         const request = {
             method: 'PUT',
             mode: 'cors',
             cache: 'no-cache',
             headers: {
-                'Content-Type': selectedFile.type
+                'Content-Type': fileType
             },
             body: content
         };
@@ -62,10 +62,12 @@ const signedUrlUpload = (function() {
             return;
         }
 
-        const url = await requestSignedUrl(selectedFile);
+        const fileName = selectedFile.name;
+        const fileType = selectedFile.type || "application/x-octet-stream";
+        const url = await requestSignedUrl(fileName, fileType);
         const content = await loadFileContent(selectedFile);
         if (url && content) {
-            await uploadFile(selectedFile, content, url);
+            await uploadFile(fileName, fileType, content, url);
             alert("upload via signed URL complete");
         }
     }

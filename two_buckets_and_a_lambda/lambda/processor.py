@@ -1,3 +1,9 @@
+""" Skeleton Processing Lambda
+
+    This Lambda simply reports the content length of the new S3 file, then
+    moves it to the archive bucket.
+    """
+
 import boto3
 import logging
 import os
@@ -5,7 +11,7 @@ import urllib.parse
 
 archive_bucket = os.environ['ARCHIVE_BUCKET']
 
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) 
 
 s3_client = boto3.client('s3')
