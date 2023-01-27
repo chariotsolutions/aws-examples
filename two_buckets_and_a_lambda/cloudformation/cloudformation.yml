@@ -39,6 +39,11 @@ Resources:
     Properties: 
       BucketName:                       !Ref StaticBucketName
       AccessControl:                    "PublicRead"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:                false
+        BlockPublicPolicy:              true
+        IgnorePublicAcls:               false
+        RestrictPublicBuckets:          true
 
 
   UploadBucket:
