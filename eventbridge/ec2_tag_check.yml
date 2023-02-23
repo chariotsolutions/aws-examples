@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Invokes a Lambda to check for proper tagging when an EC2 instance launches"
+
+Parameters:
+
+  ExpectedTags:
+    Description:                        "A list of tags that should be present on an EC2 instance"
+    Type:                               "String"
+    Default:                            ""
+
+
+Resources:
+
+  EventBridgeRule:
+    Type:                               "AWS::Events::Rule"
+    Properties:
+      Description:                      !Sub "Invokes a Lambda to examine newly launched EC2 instances; managed by CloudFormation stack ${AWS::StackName}"
+      EventPattern:
+        source:                         [ "aws.ec2" ]
+        detail-type:                    [ "EC2 Instance State-change Notification" ]
+        detail:
+          state:                        [ "running" ]
+      Targets:
+        - Id:                           "Lambda"
+          Arn:                          !GetAtt Lambda.Arn
+
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  LambdaExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "Logging"
+                Effect:                 "Allow"
+                Action:
+                  -                     "logs:CreateLogStream"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !GetAtt LambdaLogGroup.Arn
+              - Sid:                    "DescribeTags"
+                Effect:                 "Allow"
+                Action:
+                  -                     "ec2:DescribeInstances"
+                  -                     "ec2:DescribeTags"
+                Resource:               "*"
+              - Sid:                    "PublishNotification"
+                Effect:                 "Allow"
+                Action:
+                  -                     "sns:Publish"
+                Resource:               !Ref NotificationTopic
+
+
+  Lambda:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Sub "${AWS::StackName}"
+      Description:                      !Sub "Responds to EventBridge notifications of EC2 instance start, to check tagging"
+      Role:                             !GetAtt LambdaExecutionRole.Arn
+      Runtime:                          "python3.9"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        import boto3
+                                        import json
+                                        import logging
+                                        import os
+
+                                        logger = logging.getLogger()
+                                        logger.setLevel(logging.INFO)
+
+                                        ec2 = boto3.resource('ec2')
+                                        sns = boto3.resource('sns')
+
+                                        notification_topic = sns.Topic(os.environ['NOTIFICATION_TOPIC_ARN'])
+                                            
+                                        expected_tags = os.getenv("EXPECTED_TAGS")
+                                        if expected_tags:
+                                            expected_tags = set(expected_tags.split(","))
+                                            logger.info(f"expected tags: {expected_tags}")
+                                        else:
+                                            logger.error(f"no expected tags configured")
+                                            expected_tags = set()
+                                            
+
+                                        def lambda_handler(event, context):
+                                            # print(json.dumps(event))
+                                            instance_id = event['detail']['instance-id']
+                                            logger.debug(f"examining instance {instance_id}")
+                                            
+                                            actual_tags = set()
+                                            instance = ec2.Instance(instance_id)
+                                            for t in instance.tags:
+                                                actual_tags.add(t['Key'])
+                                                
+                                            logger.debug(f"actual tags: {actual_tags}")
+                                            
+                                            result = expected_tags.difference(actual_tags)
+                                            if result:
+                                                logger.info(f"instance {instance_id} missing tags: {result}")
+                                                notification_topic.publish(
+                                                    Subject="Instance Launch Check",
+                                                    Message=f"instance {instance_id} missing tags: {result}"
+                                                    )
+                                            else:
+                                                logger.info(f"instance {instance_id} has all required tags")
+      MemorySize:                       512
+      Timeout:                          15
+      Environment:
+        Variables:
+          EXPECTED_TAGS:                !Ref ExpectedTags
+          NOTIFICATION_TOPIC_ARN:       !Ref NotificationTopic
+
+
+  LambdaInvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ Lambda ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt Lambda.Arn
+      Principal:                        "events.amazonaws.com"
+      SourceAccount:                    !Ref AWS::AccountId
+      SourceArn:                        !GetAtt EventBridgeRule.Arn
+
+
+  NotificationTopic:
+    Type:                               "AWS::SNS::Topic"
+    Properties:
+      TopicName:                        !Sub "${AWS::StackName}-Notification"
+      DisplayName:                      "Instance Tagging Notification"
