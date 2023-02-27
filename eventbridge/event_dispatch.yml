@@ -1,0 +1,309 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Demonstrates sending custom events, and dispatching them to different listeners"
+
+
+Resources:
+
+  EventBus:
+    Type:                               "AWS::Events::EventBus"
+    Properties:
+      Name:                             !Ref AWS::StackName
+
+  FailedMessageQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties:
+      QueueName:                        !Sub "${AWS::StackName}-PutEventsFailures"
+      MessageRetentionPeriod:           1209600
+
+##
+## Injection Lambda: simulates events from a web-app
+##
+
+  InjectionLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-Injection"
+      RetentionInDays:                  7
+
+
+  InjectionLambdaExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-Injection-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "Logging"
+                Effect:                 "Allow"
+                Action:
+                  -                     "logs:CreateLogStream"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !GetAtt InjectionLambdaLogGroup.Arn
+              - Sid:                    "EventBridge"
+                Effect:                 "Allow"
+                Action:
+                  -                     "events:PutEvents"
+                Resource:
+                  -                     !GetAtt EventBus.Arn
+              - Sid:                    "SQS"
+                Effect:                 "Allow"
+                Action:
+                  -                     "sqs:PutEvents"
+                Resource:
+                  -                     !GetAtt FailedMessageQueue.Arn
+
+
+  InjectionLambda:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Sub "${AWS::StackName}-Injection"
+      Description:                      "Writes its invocation event to EventBridge"
+      Role:                             !GetAtt InjectionLambdaExecutionRole.Arn
+      Runtime:                          "python3.9"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        import boto3
+                                        import json
+                                        import logging
+                                        import os
+
+                                        logger = logging.getLogger(__file__)
+                                        logger.setLevel(logging.INFO)
+
+                                        event_bus_name = os.environ['EVENT_BUS_NAME']
+                                        failure_queue_url = os.environ['FAILURE_QUEUE_URL']
+
+                                        eb_client = boto3.client('events')
+                                        sqs_client = boto3.client('sqs')
+
+                                        def lambda_handler(event, context):
+                                            logger.info(f"injecting message: {event}")
+                                            put_event_with_sqs_fallback("EventInjection", "Example", json.dumps(event))
+
+                                        def put_event_with_sqs_fallback(source:str, detail_type:str, detail:str):
+                                            """ Attempts to publish an event to the named event bus. If it fails,
+                                                the event is sent to an SQS queue for manual intervention.
+                                                """
+                                            entry = {
+                                                'EventBusName': event_bus_name,
+                                                'Source': source,
+                                                'DetailType': detail_type,
+                                                'Detail': detail,
+                                            }
+                                            try:
+                                                logger.debug(f"sending event: {entry}")
+                                                result = eb_client.put_events(Entries=[entry])['Entries'][0]
+                                                if result.get('EventId'):
+                                                    logger.debug(f"event successfully sent; ID = {result.get('EventId')}")
+                                                    return
+                                                else:
+                                                    logger.warning(f"event not sent; error = {result.get('ErrorMessage')}")
+                                            except:
+                                                logger.warning("exception when processing event", exc_info=True)
+                                                result = {}
+                                                # fall through to write to SQS with dummy result
+                                            logging.info("sending failure message to SQS")
+                                            sqs_client.send_message(
+                                                QueueUrl=failure_queue_url,
+                                                MessageBody=detail,
+                                                MessageAttributes={
+                                                    'EventBusName': { 'DataType': 'String', 'StringValue': event_bus_name or "unknown" },
+                                                    'Source':       { 'DataType': 'String', 'StringValue': source or "unknown" },
+                                                    'DetailType':   { 'DataType': 'String', 'StringValue': detail_type or "unknown" },
+                                                    'ErrorMessage': { 'DataType': 'String', 'StringValue': result.get('ErrorMessage', "unknown") },
+                                                })
+      MemorySize:                       512
+      Timeout:                          15
+      Environment:
+        Variables:
+          EVENT_BUS_NAME:               !Ref EventBus
+          FAILURE_QUEUE_URL:            !GetAtt FailedMessageQueue.QueueUrl
+
+
+##
+## Message-Handler 01: receives cart events
+##
+
+  MessageHandlerLambda01LogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-MessageHandler01"
+      RetentionInDays:                  7
+
+
+  MessageHandlerLambda01ExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-MessageHandler01-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "Logging"
+                Effect:                 "Allow"
+                Action:
+                  -                     "logs:CreateLogStream"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !GetAtt MessageHandlerLambda01LogGroup.Arn
+
+
+  MessageHandlerLambda01:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Sub "${AWS::StackName}-MessageHandler01"
+      Description:                      "Invoked as a result of the AddToCart and UpdateCartQuantity events"
+      Role:                             !GetAtt MessageHandlerLambda01ExecutionRole.Arn
+      Runtime:                          "python3.9"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        import json
+
+                                        def lambda_handler(event, context):
+                                            print(json.dumps(event))
+      MemorySize:                       512
+      Timeout:                          15
+
+
+  LambdaInvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt MessageHandlerLambda01.Arn
+      Principal:                        "events.amazonaws.com"
+      SourceAccount:                    !Ref AWS::AccountId
+      SourceArn:                        !GetAtt EventBridgeRule01.Arn
+
+
+  EventBridgeRule01:
+    Type:                               "AWS::Events::Rule"
+    Properties:
+      Description:                      !Sub "Invokes a lambda in response to specific event types"
+      EventBusName:                     !Ref EventBus
+      EventPattern:
+        source:                         [ "EventInjection" ]
+        detail-type:                    [ "Example" ]
+        detail:
+          eventType:
+            -                           "addToCart"
+            -                           "updateItemQuantity"
+      Targets:
+        - Id:                           "Lambda"
+          Arn:                          !GetAtt MessageHandlerLambda01.Arn
+
+
+##
+## Message-Handler 02: receives checkout-complete events
+##
+
+  MessageHandlerLambda02LogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}-MessageHandler02"
+      RetentionInDays:                  7
+
+
+  MessageHandlerLambda02ExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-MessageHandler02-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "Logging"
+                Effect:                 "Allow"
+                Action:
+                  -                     "logs:CreateLogStream"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !GetAtt MessageHandlerLambda02LogGroup.Arn
+
+
+  MessageHandlerLambda02:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Sub "${AWS::StackName}-MessageHandler02"
+      Description:                      "Invoked as a result of the AddToCart and UpdateCartQuantity events"
+      Role:                             !GetAtt MessageHandlerLambda02ExecutionRole.Arn
+      Runtime:                          "python3.9"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        import json
+
+                                        def lambda_handler(event, context):
+                                            print(json.dumps(event))
+      MemorySize:                       512
+      Timeout:                          15
+
+
+  LambdaInvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !GetAtt MessageHandlerLambda02.Arn
+      Principal:                        "events.amazonaws.com"
+      SourceAccount:                    !Ref AWS::AccountId
+      SourceArn:                        !GetAtt EventBridgeRule02.Arn
+
+
+  EventBridgeRule02:
+    Type:                               "AWS::Events::Rule"
+    Properties:
+      Description:                      !Sub "Invokes a lambda in response to specific event types"
+      EventBusName:                     !Ref EventBus
+      EventPattern:
+        source:                         [ "EventInjection" ]
+        detail-type:                    [ "Example" ]
+        detail:
+          eventType:
+            -                           "checkoutComplete"
+      Targets:
+        - Id:                           "Lambda"
+          Arn:                          !GetAtt MessageHandlerLambda02.Arn
+
+
+Outputs:
+
+  FailureQueueArn:
+    Description:                        "ARN of the queue that receives PutEvents failures"
+    Value:                              !GetAtt FailedMessageQueue.Arn
+
+  FailureQueueUrl:
+    Description:                        "URL of the queue that receives PutEvents failures"
+    Value:                              !GetAtt FailedMessageQueue.QueueUrl
