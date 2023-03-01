@@ -1,0 +1,160 @@
+##
+## This template creates a set of Glue jobs that show different X-Ray implementtions.
+##
+## To use, you must have already created an "everything bucket" (that holds scripts,
+## source data, and output), and an X-Ray daemon (using the daemon.yml script).
+##
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Glue/XRay examples"
+
+Parameters:
+
+  BucketName:
+    Description:                        "The bucket used to hold data and job source code"
+    Type:                               "String"
+
+  ScriptPrefix:
+    Description:                        "Prefix (in working bucket) where Python scripts are stored; must not include trailing slash"
+    Type:                               "String"
+    Default:                            "jobs"
+
+  DataPrefix:
+    Description:                        "Prefix (in working bucket) where source data is stored; must not include trailing slash"
+    Type:                               "String"
+    Default:                            "json"
+
+  OutputPrefix:
+    Description:                        "Prefix (in working bucket) where output data is stored; must not include trailing slash"
+    Type:                               "String"
+    Default:                            "avro"
+
+Resources:
+
+  GlueExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-GlueExecutionRole-${AWS::Region}"
+      Description:                      !Sub "Role used by Glue to run examples defined by stack ${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["glue.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      ManagedPolicyArns:
+       -                                "arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess"
+      Policies:
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:CreateLogGroup"
+                -                       "logs:CreateLogStream"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*"
+                -                       !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/*:*"
+        - PolicyName:                   "ReadSource"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:GetObject"
+                -                       "s3:HeadObject"
+                -                       "s3:ListBucket"
+                -                       "s3:ListBucketV2"
+              Resource:
+                -                       !Sub "arn:${AWS::Partition}:s3:::${BucketName}"
+                -                       !Sub "arn:${AWS::Partition}:s3:::${BucketName}/${ScriptPrefix}/*"
+                -                       !Sub "arn:${AWS::Partition}:s3:::${BucketName}/${DataPrefix}/*"
+        - PolicyName:                   "WriteDestination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:PutObject"
+              Resource:
+                -                       !Sub "arn:${AWS::Partition}:s3:::${BucketName}/${OutputPrefix}/*"
+
+
+  GlueExample01:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-Example_01"
+      Description:                      "Demonstrates writing segments directly to X-Ray"
+      GlueVersion:                      "3.0"
+      Role:                             !GetAtt GlueExecutionRole.Arn
+      Command: 
+        Name:                           "pythonshell"
+        PythonVersion:                  "3.9"
+        ScriptLocation:                 !Sub "s3://${BucketName}/${ScriptPrefix}/example-1.py"
+      DefaultArguments: 
+        "--data_bucket":                !Ref BucketName
+        "--source_prefix":              !Ref DataPrefix
+        "--dest_prefix":                !Ref OutputPrefix
+        "--additional-python-modules":  "fastavro,python-dateutil"
+      Timeout:                          10
+      MaxRetries:                       0
+
+
+  GlueExample02:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-Example_02"
+      Description:                      "Demonstrates writing segments using the X-Ray SDK with a custom emitter"
+      GlueVersion:                      "3.0"
+      Role:                             !GetAtt GlueExecutionRole.Arn
+      Command: 
+        Name:                           "pythonshell"
+        PythonVersion:                  "3.9"
+        ScriptLocation:                 !Sub "s3://${BucketName}/${ScriptPrefix}/example-2.py"
+      DefaultArguments: 
+        "--data_bucket":                !Ref BucketName
+        "--source_prefix":              !Ref DataPrefix
+        "--dest_prefix":                !Ref OutputPrefix
+        "--additional-python-modules":  "aws-xray-sdk,fastavro,python-dateutil"
+      Timeout:                          10
+      MaxRetries:                       0
+
+
+  GlueExample03:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-Example_03"
+      Description:                      "Demonstrates writing segments for dataframe operations"
+      GlueVersion:                      "3.0"
+      Role:                             !GetAtt GlueExecutionRole.Arn
+      WorkerType:                       "G.1X"
+      NumberOfWorkers:                  3
+      Command: 
+        Name:                           "glueetl"
+        PythonVersion:                  "3"
+        ScriptLocation:                 !Sub "s3://${BucketName}/${ScriptPrefix}/example-3.py"
+      DefaultArguments: 
+        "--additional-python-modules":  "aws-xray-sdk"
+      Timeout:                          10
+      MaxRetries:                       0
+
+
+  GlueExample04:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-Example_04"
+      Description:                      "Demonstrates writing segments from a user-defined function"
+      GlueVersion:                      "3.0"
+      Role:                             !GetAtt GlueExecutionRole.Arn
+      WorkerType:                       "G.1X"
+      NumberOfWorkers:                  3
+      Command: 
+        Name:                           "glueetl"
+        PythonVersion:                  "3"
+        ScriptLocation:                 !Sub "s3://${BucketName}/${ScriptPrefix}/example-4.py"
+      DefaultArguments: 
+        "--additional-python-modules":  "aws-xray-sdk"
+      Timeout:                          10
+      MaxRetries:                       0

@@ -1,0 +1,135 @@
+#!/bin/env python3
+
+""" Example X-Ray-enabled Glue job that measures the execution time of a Pandas UDF.
+    """
+
+import binascii
+import boto3
+import json
+import pandas as pd
+import os
+import sys
+import time
+import uuid
+
+from awsglue.context import GlueContext
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from pyspark.sql.functions import udf, pandas_udf
+from pyspark.sql.types import StringType
+
+from aws_xray_sdk.core import xray_recorder
+
+
+##
+## X-Ray related stuff
+##
+
+class CustomEmitter:
+    """ This class replaces the default emitter in the X-Ray SDK, and writes
+        directly to the X-Ray service rather than a daemon.
+        """
+
+    def __init__(self):
+        self.xray_client = None  # lazily initialize
+
+    def send_entity(self, entity):
+        if not self.xray_client:
+            self.xray_client = boto3.client('xray')
+        segment_doc = json.dumps(entity.to_dict())
+        self.xray_client.put_trace_segments(TraceSegmentDocuments=[segment_doc])
+
+    def set_daemon_address(self, address):
+        pass
+
+    @property
+    def ip(self):
+        return None
+
+    @property
+    def port(self):
+        return None
+
+
+def generate_segment_id():
+    """ Returns a random (hopefully unique) segment ID.
+        """
+    return binascii.hexlify(os.urandom(8)).decode()
+
+
+def write_subsegment(segment_name, start_time, end_time, row_count):
+    """ A helper function so that we don't clutter the Glue code.
+        """
+    global xray_trace_id, xray_parent_segment_id
+    xray_client = boto3.client('xray')
+    xray_child_segment = {
+        "trace_id" : xray_trace_id,
+        "id" : generate_segment_id(),
+        "parent_id": xray_parent_segment_id,
+        "name" : segment_name,
+        "start_time" : start_time,
+        "end_time": end_time,
+        "metadata": {
+            "worker_ip": os.getenv("CONTAINER_HOST_PRIVATE_IP", "unknown"),
+            "row_count": row_count,
+        }
+    }
+    xray_client.put_trace_segments(TraceSegmentDocuments=[json.dumps(xray_child_segment)])
+
+
+xray_recorder.configure(
+    emitter=CustomEmitter(),
+    context_missing='LOG_ERROR',
+    sampling=False)
+
+
+##
+## The UDF
+##
+
+def unique_ids(series: pd.Series) -> pd.Series:
+    start_time = time.time()
+    row_count = 0
+    try:
+        time.sleep(0.25)
+        if series is not None:
+            arr = [str(uuid.uuid4()) for value in series]
+            row_count = len(arr)
+            return pd.Series(arr)
+    finally:
+        write_subsegment("unique_ids", start_time, time.time(), row_count)
+
+unique_ids = pandas_udf(unique_ids, StringType()).asNondeterministic()
+
+
+##
+## The Glue job
+##
+
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+job_name = args['JOB_NAME']
+
+xray_recorder.begin_segment(job_name)
+
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+
+with xray_recorder.in_subsegment("generate_dataframe"):
+    df1 = spark.range(100000)
+
+with xray_recorder.in_subsegment("add_unique_ids") as segment:
+    xray_trace_id = segment.trace_id
+    xray_parent_segment_id = segment.id
+    df2 = df1.withColumn('unique_id', unique_ids(df1.id))
+    df2.foreach(lambda x : x) # forces evaluation of dataframe operation
+
+with xray_recorder.in_subsegment("sort_dataframe"):
+    df3 = df2.orderBy('unique_id')
+    df3.foreach(lambda x : x)
+
+df3.show()
+
+xray_recorder.end_segment()
+
+
