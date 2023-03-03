@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Uses EventBridge Pipes to partition events sent to a Kinesis stream"
+
+Parameters:
+
+  DestinationBucketName:
+    Description:                        "The name of a bucket created to hold partitioned events"
+    Type:                               "String"
+
+Resources:
+
+  SourceStream:
+    Type:                               "AWS::Kinesis::Stream"
+    Properties:
+      Name:                             !Ref AWS::StackName
+      ShardCount:                       1
+
+
+  DestinationBucket:
+    Type:                               "AWS::S3::Bucket"
+    Properties: 
+      BucketName:                       !Ref DestinationBucketName
+      AccessControl:                    "Private"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/events/"
+      RoleName:                         !Sub "${AWS::StackName}-Firehose-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "Logging"
+                Effect:                 "Allow"
+                Action:
+                  -                     "logs:CreateLogStream"
+                  -                     "logs:PutLogEvents"
+                Resource:               !GetAtt FirehoseLogGroup.Arn
+              - Sid:                    "WriteToS3"
+                Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:GetObject"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !GetAtt DestinationBucket.Arn
+                  -                     !Sub "${DestinationBucket.Arn}/*"
+
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties: 
+      LogGroupName:                     !Sub "${AWS::StackName}-Firehose"
+      RetentionInDays:                  7
+
+
+  CartEventFirehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Sub "${AWS::StackName}-CartEvents"
+      DeliveryStreamType:               "DirectPut"
+      S3DestinationConfiguration:
+        BucketARN:                      !GetAtt DestinationBucket.Arn
+        Prefix:                         "cart_events/"
+        ErrorOutputPrefix:              "cart_event_failures/"
+        CompressionFormat:              "GZIP"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        BufferingHints:
+          IntervalInSeconds:            120
+          SizeInMBs:                    10
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                "cart_events"
+
+
+  CheckoutCompleteFirehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Sub "${AWS::StackName}-CheckoutComplete"
+      DeliveryStreamType:               "DirectPut"
+      S3DestinationConfiguration:
+        BucketARN:                      !GetAtt DestinationBucket.Arn
+        Prefix:                         "checkout_complete/"
+        ErrorOutputPrefix:              "checkout_complete_failures/"
+        CompressionFormat:              "GZIP"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        BufferingHints:
+          IntervalInSeconds:            120
+          SizeInMBs:                    10
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                "checkout_complete"
+
+
+  PipeRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/events/"
+      RoleName:                         !Sub "${AWS::StackName}-Pipe-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "pipes.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "OperationalPermissions"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "ReadFromSource"
+                Effect:                 "Allow"
+                Action:
+                  -                     "kinesis:DescribeStream"
+                  -                     "kinesis:DescribeStreamSummary"
+                  -                     "kinesis:GetRecords"
+                  -                     "kinesis:GetShardIterator"
+                  -                     "kinesis:ListStreams"
+                  -                     "kinesis:ListShards"
+                Resource:
+                  -                     !GetAtt SourceStream.Arn
+              - Sid:                    "WriteToFirehose"
+                Effect:                 "Allow"
+                Action:
+                  -                     "firehose:PutRecord*"
+                Resource:
+                  -                     !GetAtt CartEventFirehose.Arn
+                  -                     !GetAtt CheckoutCompleteFirehose.Arn
+
+
+  CartEventPipe:
+    Type:                               "AWS::Pipes::Pipe"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-CartEvents"
+      Description:                      !Sub "Extracts cart events from Kinesis stream ${SourceStream} and writes them to firehose ${CartEventFirehose}"
+      RoleArn:                          !GetAtt PipeRole.Arn
+      Source:                           !GetAtt SourceStream.Arn
+      SourceParameters: 
+        KinesisStreamParameters:
+          StartingPosition:             "LATEST"
+          BatchSize:                    100
+          MaximumBatchingWindowInSeconds: 10
+          #DeadLetterConfig: 
+          #MaximumRetryAttempts: Integer
+          #OnPartialBatchItemFailure: String
+        FilterCriteria:
+          Filters:
+            - Pattern:                  "{ \"data\": { \"eventType\": [ \"addToCart\", \"updateItemQuantity\" ] } }"
+      Target:                           !GetAtt CartEventFirehose.Arn
+      TargetParameters:
+        InputTemplate:                  |
+                                        {"event_type": "<$.data.eventType>", "event_id": "<$.data.eventId>", "timestamp": "<$.data.timestamp>", "user_id": "<$.data.userId>", "product_id": "<$.data.productId>", "quantity": "<$.data.quantity>" }
+
+  CheckoutCompletePipe:
+    Type:                               "AWS::Pipes::Pipe"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}-CheckoutComplete"
+      Description:                      !Sub "Extracts cart events from Kinesis stream ${SourceStream} and writes them to firehose ${CheckoutCompleteFirehose}"
+      RoleArn:                          !GetAtt PipeRole.Arn
+      Source:                           !GetAtt SourceStream.Arn
+      SourceParameters: 
+        KinesisStreamParameters:
+          StartingPosition:             "LATEST"
+          BatchSize:                    100
+          MaximumBatchingWindowInSeconds: 10
+          #DeadLetterConfig: 
+          #MaximumRetryAttempts: Integer
+          #OnPartialBatchItemFailure: String
+        FilterCriteria:
+          Filters:
+            - Pattern:                  "{ \"data\": { \"eventType\": [ \"checkoutComplete\" ] } }"
+      Target:                           !GetAtt CheckoutCompleteFirehose.Arn
+      TargetParameters:
+        InputTemplate:                  |
+                                        {"event_type": "<$.data.eventType>", "event_id": "<$.data.eventId>", "timestamp": "<$.data.timestamp>", "user_id": "<$.data.userId>", "items_in_cart": "<$.data.itemsInCart>", "total_value": "<$.data.totalValue>"}
+
