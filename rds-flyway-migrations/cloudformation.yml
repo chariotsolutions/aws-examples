@@ -319,23 +319,17 @@ Resources:
                 Image:                          aws/codebuild/amazonlinux2-x86_64-standard:4.0
                 PrivilegedMode:                 true
                 EnvironmentVariables:
-                   - Name:                     "DB_DATABASE"
-                     Value:                    !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbDatabaseName}}"]]
-
                    - Name:                       "DB_HOSTNAME"
                      Value:                      !GetAtt DatabaseCluster.Endpoint.Address
 
                    - Name:                       "DB_PORT"
                      Value:                      !GetAtt DatabaseCluster.Endpoint.Port
 
-                   - Name:                       "DB_USERNAME"
-                     Value:                      !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbUserName}}"]]
-
-                   - Name:                       "DB_PASSWORD"
-                     Value:                      !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbPassword}}"]]
-
                    - Name:                       "AWS_REGION"
                      Value:                      !Sub "${AWS::Region}"
+
+                   - Name:                       "DB_SECRETS_ARN"
+                     Value:                      !Ref DBSecrets
 
             Source:
                 Auth:
@@ -345,6 +339,11 @@ Resources:
                 GitCloneDepth:                  1
                 BuildSpec: |
                   version: 0.2
+                  env: 
+                    secrets-manager:
+                      DB_DATABASE:              ${DB_SECRETS_ARN}:dbDatabaseName 
+                      DB_USERNAME:              ${DB_SECRETS_ARN}:dbUserName
+                      DB_PASSWORD:              ${DB_SECRETS_ARN}:dbPassword
                   phases:
                     install:
                       runtime-versions:
