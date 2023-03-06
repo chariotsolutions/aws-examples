@@ -127,3 +127,24 @@ The solution that I used is a YAML multi-line string block that contains only a
 single line. This avoids the need to escape all of the quotes inside the JSON
 record, and it adds a newline at the end of the record.
 of the record. 
+
+
+## cloudwatch_subscription.yml
+
+Demonstrates a custom "enrichment" Lambda in an EventBridge Pipe, to extract
+events from a CloudWatch Logs subscription and write them to a Kinesis stream.
+
+This template creates the following AWS resources:
+
+* Two Kinesis streams, one to collect the raw subscription messages, and one to
+  receive the extracted events.
+* An EventBridge Pipe to connect these streams.
+* An "enrichment" Lambda that decomposes the messages, with associated roles and
+  groups.
+* An "example" Lambda that generates log messages when it's invoked.
+* A CloudWatch Logs subscription to send events from this example Lambda to the
+  source Kinesis stream.
+
+See [this blog post](http://blog.kdgregory.com/2023/01/using-eventbridge-pipes-to-route.html).
+for more information about why you would want to do this. Parts of this example
+are copied from the CloudFormation templates associated with that blog post.
