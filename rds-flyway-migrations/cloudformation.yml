@@ -1,0 +1,346 @@
+##
+## Creates a VPC with two public and two private subnets, each of which supports 4096 IP
+## addresses (ex reserved addresses), and with NATs for use by the private subnets.
+##
+## The VPC ID and Subnet IDs are exported, for use by other stacks.
+##
+
+##
+## Due to the need to populate the database, this template must be
+## loaded twice: the first pass creates all resources other than the
+## ECS cluster, while the second (which is run after the database is
+## populated) creates the ECS Service.
+##
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC, CodeBuild and RDS for Flyway Demo"
+
+Parameters:
+    BaseCIDR:
+        Description: "The first two bytes of a /16 CIDR that will be used for the VPC"
+        Type: "String"
+        Default: "10.10"
+
+    GitHubRepoUrl:
+        Description: "The URL of the project to clone"
+        Type: "String"
+        Default: "https://github.com/chariotsolutions/ews-examples.git"
+
+Resources:
+
+    VPC:
+        Type: "AWS::EC2::VPC"
+        Properties:
+            CidrBlock: !Sub "${BaseCIDR}.0.0/16"
+            EnableDnsSupport: true
+            EnableDnsHostnames: true
+            Tags:
+                - Key: "Name"
+                  Value: "rds-flyway-migrations-sample"
+
+    PublicSubnet01:
+        Type: "AWS::EC2::Subnet"
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: !Sub "${BaseCIDR}.0.0/20"
+            AvailabilityZone: !Sub "${AWS::Region}a"
+            MapPublicIpOnLaunch: true
+
+    PublicSubnet02:
+        Type: "AWS::EC2::Subnet"
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: !Sub "${BaseCIDR}.16.0/20"
+            AvailabilityZone: !Sub "${AWS::Region}b"
+            MapPublicIpOnLaunch: true
+
+    InternetGateway:
+        Type: "AWS::EC2::InternetGateway"
+
+
+    InternetGatewayAttachment:
+        Type: "AWS::EC2::VPCGatewayAttachment"
+        Properties:
+            VpcId: !Ref VPC
+            InternetGatewayId: !Ref InternetGateway
+
+    PublicSubnet01Routes:
+        Type: "AWS::EC2::SubnetRouteTableAssociation"
+        Properties:
+            SubnetId: !Ref PublicSubnet01
+            RouteTableId: !Ref PublicRouteTable
+
+    PublicSubnet02Routes:
+        Type: "AWS::EC2::SubnetRouteTableAssociation"
+        Properties:
+            SubnetId: !Ref PublicSubnet02
+            RouteTableId: !Ref PublicRouteTable
+
+    PublicRouteTable:
+        Type: "AWS::EC2::RouteTable"
+        Properties:
+            VpcId: !Ref VPC
+
+    ##
+    ## Private Subnets -- each needs its own route table to support NAT
+    ##
+
+    PrivateSubnet01:
+        Type: "AWS::EC2::Subnet"
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: !Sub "${BaseCIDR}.128.0/20"
+            AvailabilityZone: !Sub "${AWS::Region}a"
+            MapPublicIpOnLaunch: false
+
+    PrivateSubnet02:
+        Type: "AWS::EC2::Subnet"
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: !Sub "${BaseCIDR}.144.0/20"
+            AvailabilityZone: !Sub "${AWS::Region}b"
+            MapPublicIpOnLaunch: false
+
+    PrivateRouteTable:
+        Type: "AWS::EC2::RouteTable"
+        Properties:
+            VpcId: !Ref VPC
+
+    PrivateSubnet01Routes:
+        Type: "AWS::EC2::SubnetRouteTableAssociation"
+        Properties:
+            SubnetId: !Ref PrivateSubnet01
+            RouteTableId: !Ref PrivateRouteTable
+
+    PrivateSubnet02Routes:
+        Type: "AWS::EC2::SubnetRouteTableAssociation"
+        Properties:
+            SubnetId: !Ref PrivateSubnet02
+            RouteTableId: !Ref PrivateRouteTable
+
+    ##
+    ## NATs
+    ##
+
+    ElasticIP01:
+        Type: "AWS::EC2::EIP"
+        Properties:
+            Domain: "vpc"
+
+    ElasticIP02:
+        Type: "AWS::EC2::EIP"
+        Properties:
+            Domain: "vpc"
+
+    NAT:
+        Type: "AWS::EC2::NatGateway"
+        Properties:
+            SubnetId: !Ref PublicSubnet01
+            AllocationId: !GetAtt ElasticIP01.AllocationId
+
+    PrivateRouteNAT:
+        Type: "AWS::EC2::Route"
+        Properties:
+            RouteTableId: !Ref PrivateRouteTable
+            DestinationCidrBlock: "0.0.0.0/0"
+            NatGatewayId: !Ref NAT
+
+    CodeBuildSecurityGroup:
+        Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupName: !Sub "${AWS::StackName}-CodeBuildSG"
+            GroupDescription: "Security Group for CodeBuild"
+            VpcId: !Ref VPC
+
+    DBSecrets:
+        Type: AWS::SecretsManager::Secret
+        Properties:
+            Description: "Secrets for the demo application"
+            GenerateSecretString:
+                SecretStringTemplate: |
+                  {
+                    "dbDatabaseName": "demodb",
+                    "dbUserName": "demouser"
+                  }
+                GenerateStringKey: "dbPassword"
+                ExcludePunctuation: true  # easier to select for those times that you need to copy/paste
+                PasswordLength: 20
+
+    DatabaseSecurityGroup:
+        Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupName: !Sub "${AWS::StackName}-dbSG"
+            GroupDescription: "Allows access to the database (nominally from application)"
+            VpcId: !Ref VPC
+
+    RDSParameterGroup:
+        Type: "AWS::RDS::DBClusterParameterGroup"
+        Properties:
+            DBClusterParameterGroupName: !Sub "${AWS::StackName}-dbcluster-param-group"
+            Description: !Sub "Managed by CloudFormation: ${AWS::StackName}"
+            Family: "aurora-postgresql11"
+            Parameters: # cluster parameter groups must have parameters; this is mostly harmless, customize as you wish
+                client_encoding: "UTF8"
+
+    RDSSubnetGroup:
+        Type: "AWS::RDS::DBSubnetGroup"
+        Properties:
+            DBSubnetGroupName: !Sub "${AWS::StackName}-db-subnet-group"
+            DBSubnetGroupDescription: !Sub "Managed by CloudFormation: ${AWS::StackName}"
+            SubnetIds:
+                - !Ref PrivateSubnet01
+                - !Ref PrivateSubnet02
+
+    DatabaseCluster:
+        Type: "AWS::RDS::DBCluster"
+        Properties:
+            DBClusterIdentifier: !Sub "${AWS::StackName}-PostgresCluster"
+            Engine: "aurora-postgresql"
+            # n.b. this query tells you the provisioned -vs- serverless versions available
+            # aws rds describe-db-engine-versions --engine aurora-postgresql --query 'DBEngineVersions[].[EngineVersion, SupportedEngineModes]'
+            # Only 11.13 was available for the serverless mode
+            EngineVersion: "11.13"
+            EngineMode: "serverless"
+            # NEVER LEAVE THIS ON IN PRODUCTION
+            EnableHttpEndpoint: true
+            ScalingConfiguration:
+                MinCapacity:                    2
+                MaxCapacity:                    4
+                AutoPause:                      true
+                SecondsUntilAutoPause:          3600
+            # You can add logging with EnableCloudwatchLogsExports:
+            #  - postgresql
+            DBClusterParameterGroupName: !Ref RDSParameterGroup
+            MasterUsername: !Sub "{{resolve:secretsmanager:${DBSecrets}:SecretString:dbUserName}}"
+            MasterUserPassword: !Sub "{{resolve:secretsmanager:${DBSecrets}:SecretString:dbPassword}}"
+            DatabaseName: !Sub "{{resolve:secretsmanager:${DBSecrets}:SecretString:dbDatabaseName}}"
+            Port: 5432                    # note, default is 3306, even for Postgres
+            DBSubnetGroupName: !Ref RDSSubnetGroup
+            VpcSecurityGroupIds:
+                - !Ref DatabaseSecurityGroup
+            BackupRetentionPeriod: 7
+            StorageEncrypted: true
+
+
+    CodeBuildExecutionRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            RoleName: !Sub "${AWS::StackName}-cbExecRole"
+            Path: "/builder/"
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: "Allow"
+                      Principal:
+                          Service:
+                              - "codebuild.amazonaws.com"
+                      Action:
+                          - "sts:AssumeRole"
+            ManagedPolicyArns:
+                - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser"
+                - "arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess"
+            Policies:
+                - PolicyName: CodeBuildLoggingPolicy
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: "Allow"
+                            Action:
+                                - "logs:CreateLogGroup"
+                                - "logs:CreateLogStream"
+                                - "logs:PutLogEvents"
+                            Resource: "*"
+                - PolicyName: CodeBuildECSTaskExecution
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                      - # Secrets manager
+                        Effect: "Allow"
+                        Action:
+                            - "secretsmanager:Describe*"
+                            - "secretsmanager:Get*"
+                            - "secretsmanager:List*"
+                        Resource: !Ref DBSecrets
+                - PolicyName: CodeBuildEC2NetworkingAccess
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                        - # Access to networking resources
+                            Effect: Allow
+                            Action:
+                                - "ec2:CreateNetworkInterface"
+                                - "ec2:DescribeDhcpOptions"
+                                - "ec2:DescribeNetworkInterfaces"
+                                - "ec2:DeleteNetworkInterface"
+                                - "ec2:DescribeSubnets"
+                                - "ec2:DescribeSecurityGroups"
+                                - "ec2:DescribeVpcs"
+                                - "ec2:CreateNetworkInterfacePermission"
+                            Resource: "*"
+
+    MigrationsProject:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name:                             !Sub "${AWS::StackName}-cbMigrations"
+            Description:                      Run DB Migrations for the platform
+            ServiceRole:                      !GetAtt CodeBuildExecutionRole.Arn
+            Artifacts:
+                Type:                           NO_ARTIFACTS
+            VpcConfig:
+                VpcId: !Ref VPC
+                SecurityGroupIds: [ !Ref CodeBuildSecurityGroup ]
+                Subnets: [ !Ref PrivateSubnet01, !Ref PrivateSubnet02 ]
+            LogsConfig:
+                CloudWatchLogs:
+                    GroupName:                    "/codebuild/migration"
+                    Status:                       ENABLED
+                    StreamName:                   "codebuild-log"
+            Environment:
+                Type:                           LINUX_CONTAINER
+                ComputeType:                    BUILD_GENERAL1_SMALL
+                Image:                          aws/codebuild/amazonlinux2-x86_64-standard:4.0
+                PrivilegedMode:                 true
+                EnvironmentVariables:
+                   - Name:                     "DB_DATABASE"
+                     Value:                    !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbDatabaseName}}"]]
+
+                   - Name:                       "DB_HOSTNAME"
+                     Value:                      !GetAtt DatabaseCluster.Endpoint.Address
+
+                   - Name:                       "DB_PORT"
+                     Value:                      !GetAtt DatabaseCluster.Endpoint.Port
+
+                   - Name:                       "DB_USERNAME"
+                     Value:                      !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbUserName}}"]]
+
+                   - Name:                       "DB_PASSWORD"
+                     Value:                      !Join ["", ["{{resolve:secretsmanager:", !Ref "DBSecrets", ":SecretString:dbPassword}}"]]
+
+                   - Name:                       "AWS_REGION"
+                     Value:                      !Sub "${AWS::Region}"
+
+            Source:
+                Auth:
+                    Type:                       OAUTH
+                Location:                       !Ref GitHubRepoUrl
+                Type:                           GITHUB
+                GitCloneDepth:                  1
+                BuildSpec: |
+                  version: 0.2
+                  phases:
+                    install:
+                      runtime-versions:
+                        java: corretto17
+                    build:
+                      commands:
+                        - wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.11.0/flyway-commandline-9.11.0-linux-x64.tar.gz | tar xvz && ln -s `pwd`/flyway-9.11.0/flyway /usr/local/bin
+                        - cd rds-flyway-migrations/flyway
+                        - flyway migrate -locations=filesystem:migrations/**/*.sql -password=$DB_PASSWORD -user=$DB_USERNAME -url=jdbc:postgresql://$DB_HOSTNAME:$DB_PORT/$DB_DATABASE -connectRetries=300 -X
+            TimeoutInMinutes:                 10
+
+Outputs:
+    DatabaseEndpointAddress:
+        Value: !GetAtt DatabaseCluster.Endpoint.Address
+
+    DatabaseEndpointPort:
+        Value: !GetAtt DatabaseCluster.Endpoint.Port
