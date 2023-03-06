@@ -24,7 +24,7 @@ Parameters:
     GitHubRepoUrl:
         Description: "The URL of the project to clone"
         Type: "String"
-        Default: "https://github.com/chariotsolutions/ews-examples.git"
+        Default: "https://github.com/chariotsolutions/aws-examples.git"
 
 Resources:
 
