@@ -57,7 +57,6 @@ Resources:
     InternetGateway:
         Type: "AWS::EC2::InternetGateway"
 
-
     InternetGatewayAttachment:
         Type: "AWS::EC2::VPCGatewayAttachment"
         Properties:
@@ -75,6 +74,13 @@ Resources:
         Properties:
             SubnetId: !Ref PublicSubnet02
             RouteTableId: !Ref PublicRouteTable
+
+    PublicRouteTableIGW:
+        Type: "AWS::EC2::Route"
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            DestinationCidrBlock: "0.0.0.0/0"
+            GatewayId: !Ref InternetGateway
 
     PublicRouteTable:
         Type: "AWS::EC2::RouteTable"
