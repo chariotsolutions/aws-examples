@@ -1,15 +1,5 @@
 ##
-## Creates a VPC with two public and two private subnets, each of which supports 4096 IP
-## addresses (ex reserved addresses), and with NATs for use by the private subnets.
-##
-## The VPC ID and Subnet IDs are exported, for use by other stacks.
-##
-
-##
-## Due to the need to populate the database, this template must be
-## loaded twice: the first pass creates all resources other than the
-## ECS cluster, while the second (which is run after the database is
-## populated) creates the ECS Service.
+## Sample RDS configuration with Flyway migrations
 ##
 
 AWSTemplateFormatVersion: "2010-09-09"
@@ -88,7 +78,7 @@ Resources:
             VpcId: !Ref VPC
 
     ##
-    ## Private Subnets -- each needs its own route table to support NAT
+    ## Private Subnets - two are configured to support RDS (which requires two subnets for a serverless implementation)
     ##
 
     PrivateSubnet01:
@@ -125,15 +115,11 @@ Resources:
             RouteTableId: !Ref PrivateRouteTable
 
     ##
-    ## NATs
+    ## NAT configuration - this is a demonstration sample, so we are only configuring a single NAT.
+    ##                     For production, each AZ would have its own NAT.
     ##
 
     ElasticIP01:
-        Type: "AWS::EC2::EIP"
-        Properties:
-            Domain: "vpc"
-
-    ElasticIP02:
         Type: "AWS::EC2::EIP"
         Properties:
             Domain: "vpc"
@@ -151,12 +137,10 @@ Resources:
             DestinationCidrBlock: "0.0.0.0/0"
             NatGatewayId: !Ref NAT
 
-    CodeBuildSecurityGroup:
-        Type: "AWS::EC2::SecurityGroup"
-        Properties:
-            GroupName: !Sub "${AWS::StackName}-CodeBuildSG"
-            GroupDescription: "Security Group for CodeBuild"
-            VpcId: !Ref VPC
+    ##
+    ## Configure a SecretsManager Secret to hold the database name, user name and password
+    ## in an encrypted store
+    ##
 
     DBSecrets:
         Type: AWS::SecretsManager::Secret
@@ -172,6 +156,9 @@ Resources:
                 ExcludePunctuation: true  # easier to select for those times that you need to copy/paste
                 PasswordLength: 20
 
+    ##
+    ## Define network visibility rules via a security group and ingress rule
+    ##
     DatabaseSecurityGroup:
         Type: "AWS::EC2::SecurityGroup"
         Properties:
@@ -179,8 +166,6 @@ Resources:
             GroupDescription: "Allows access to the database (nominally from application)"
             VpcId: !Ref VPC
 
-
-    # Add ingress rule for codebuild to talk to RDS
     DatabaseSecurityGroupCBtoDB:
         Type: "AWS::EC2::SecurityGroupIngress"
         Properties:
@@ -190,6 +175,10 @@ Resources:
             FromPort: 5432
             ToPort: 5432
             SourceSecurityGroupId: !GetAtt CodeBuildSecurityGroup.GroupId
+
+    ##
+    ## RDS Configuration - Parameter Group, Subnet Group, and Cluster
+    ##
 
     RDSParameterGroup:
         Type: "AWS::RDS::DBClusterParameterGroup"
@@ -209,6 +198,9 @@ Resources:
                 - !Ref PrivateSubnet01
                 - !Ref PrivateSubnet02
 
+    ##
+    ## This is a Serverless Aurora V1 RDS Cluster supporting Postgres 11
+    ##
     DatabaseCluster:
         Type: "AWS::RDS::DBCluster"
         Properties:
@@ -238,6 +230,17 @@ Resources:
                 - !Ref DatabaseSecurityGroup
             BackupRetentionPeriod: 7
             StorageEncrypted: true
+
+    ##
+    ## CodeBuild - set up security group, execution role and CodeBuild project
+    ##
+
+    CodeBuildSecurityGroup:
+        Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupName: !Sub "${AWS::StackName}-CodeBuildSG"
+            GroupDescription: "Security Group for CodeBuild"
+            VpcId: !Ref VPC
 
 
     CodeBuildExecutionRole:
