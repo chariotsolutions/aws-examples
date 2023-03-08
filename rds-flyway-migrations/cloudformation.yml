@@ -177,48 +177,39 @@ Resources:
             SourceSecurityGroupId: !GetAtt CodeBuildSecurityGroup.GroupId
 
     ##
-    ## RDS Configuration - Parameter Group, Subnet Group, and Cluster
+    ## Database - Aurora Serverless V2
     ##
 
     RDSParameterGroup:
         Type: "AWS::RDS::DBClusterParameterGroup"
         Properties:
-            DBClusterParameterGroupName: !Sub "${AWS::StackName}-dbcluster-param-group"
             Description: !Sub "Managed by CloudFormation: ${AWS::StackName}"
-            Family: "aurora-postgresql11"
+            Family: "aurora-postgresql14"
             Parameters: # cluster parameter groups must have parameters; this is mostly harmless, customize as you wish
                 client_encoding: "UTF8"
 
     RDSSubnetGroup:
         Type: "AWS::RDS::DBSubnetGroup"
         Properties:
-            DBSubnetGroupName: !Sub "${AWS::StackName}-db-subnet-group"
+            DBSubnetGroupName: !Sub "${AWS::StackName}-react-nodejs-sample"
             DBSubnetGroupDescription: !Sub "Managed by CloudFormation: ${AWS::StackName}"
             SubnetIds:
-                - !Ref PrivateSubnet01
-                - !Ref PrivateSubnet02
+            - !Ref PrivateSubnet01
+            - !Ref PrivateSubnet02
 
-    ##
-    ## This is a Serverless Aurora V1 RDS Cluster supporting Postgres 11
-    ##
     DatabaseCluster:
         Type: "AWS::RDS::DBCluster"
         Properties:
-            DBClusterIdentifier: !Sub "${AWS::StackName}-PostgresCluster"
+            DBClusterIdentifier: !Sub "${AWS::StackName}-postgres-cluster"
             Engine: "aurora-postgresql"
-            # n.b. this query tells you the provisioned -vs- serverless versions available
-            # aws rds describe-db-engine-versions --engine aurora-postgresql --query 'DBEngineVersions[].[EngineVersion, SupportedEngineModes]'
-            # Only 11.13 was available for the serverless mode
-            EngineVersion: "11.13"
-            EngineMode: "serverless"
+            EngineMode: "provisioned"
+            EngineVersion: "14.5"
             # NEVER LEAVE THIS ON IN PRODUCTION
             EnableHttpEndpoint: true
-            ScalingConfiguration:
-                MinCapacity:                    2
-                MaxCapacity:                    4
-                AutoPause:                      true
-                SecondsUntilAutoPause:          3600
-            # You can add logging with EnableCloudwatchLogsExports:
+            ServerlessV2ScalingConfiguration:
+                MinCapacity: 0.5
+                MaxCapacity: 2
+            # TODO - enable logs? EnableCloudwatchLogsExports:
             #  - postgresql
             DBClusterParameterGroupName: !Ref RDSParameterGroup
             MasterUsername: !Sub "{{resolve:secretsmanager:${DBSecrets}:SecretString:dbUserName}}"
@@ -228,6 +219,9 @@ Resources:
             DBSubnetGroupName: !Ref RDSSubnetGroup
             VpcSecurityGroupIds:
                 - !Ref DatabaseSecurityGroup
+            # TODO - define when backups and maintenance run
+            # PreferredMaintenanceWindow:       "Sun:06:00-Sun:06:59"
+            # PreferredBackupWindow:            "05:00-05:30"
             BackupRetentionPeriod: 7
             StorageEncrypted: true
 
