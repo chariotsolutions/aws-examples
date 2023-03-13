@@ -17,7 +17,6 @@ Parameters:
         Default: "https://github.com/chariotsolutions/aws-examples.git"
 
 Resources:
-
     VPC:
         Type: "AWS::EC2::VPC"
         Properties:
@@ -176,7 +175,7 @@ Resources:
             ToPort: 5432
             SourceSecurityGroupId: !GetAtt CodeBuildSecurityGroup.GroupId
 
-    ##
+   ##
     ## Database - Aurora Serverless V2
     ##
 
@@ -185,27 +184,21 @@ Resources:
         Properties:
             Description: !Sub "Managed by CloudFormation: ${AWS::StackName}"
             Family: "aurora-postgresql14"
-            Parameters: # cluster parameter groups must have parameters; this is mostly harmless, customize as you wish
+            Parameters:
                 client_encoding: "UTF8"
 
     RDSSubnetGroup:
         Type: "AWS::RDS::DBSubnetGroup"
         Properties:
-            DBSubnetGroupName: !Sub "${AWS::StackName}-react-nodejs-sample"
+            DBSubnetGroupName: !Sub "${AWS::StackName}-rds-subnet-group"
             DBSubnetGroupDescription: !Sub "Managed by CloudFormation: ${AWS::StackName}"
-            SubnetIds:
-            - !Ref PrivateSubnet01
-            - !Ref PrivateSubnet02
+            SubnetIds: [ !Ref PrivateSubnet01, !Ref PrivateSubnet02 ]
 
     DatabaseCluster:
         Type: "AWS::RDS::DBCluster"
         Properties:
-            DBClusterIdentifier: !Sub "${AWS::StackName}-postgres-cluster"
             Engine: "aurora-postgresql"
-            EngineMode: "provisioned"
-            EngineVersion: "14.5"
-            # NEVER LEAVE THIS ON IN PRODUCTION
-            EnableHttpEndpoint: true
+            EngineVersion: "14.6"
             ServerlessV2ScalingConfiguration:
                 MinCapacity: 0.5
                 MaxCapacity: 2
@@ -224,6 +217,14 @@ Resources:
             # PreferredBackupWindow:            "05:00-05:30"
             BackupRetentionPeriod: 7
             StorageEncrypted: true
+
+    ServerlessInstanceRedundantMuch:
+        Type: "AWS::RDS::DBInstance"
+        Properties:
+            DBClusterIdentifier: !Ref DatabaseCluster
+            DBInstanceClass: db.serverless
+            Engine: aurora-postgresql
+
 
     ##
     ## CodeBuild - set up security group, execution role and CodeBuild project
