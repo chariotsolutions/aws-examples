@@ -219,7 +219,7 @@ Resources:
             BackupRetentionPeriod: 7
             StorageEncrypted: true
 
-    ServerlessInstanceRedundantMuch:
+    ServerlessInstance:
         Type: "AWS::RDS::DBInstance"
         Properties:
             DBClusterIdentifier: !Ref DatabaseCluster
