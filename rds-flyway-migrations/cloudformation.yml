@@ -202,7 +202,8 @@ Resources:
             ServerlessV2ScalingConfiguration:
                 MinCapacity: 0.5
                 MaxCapacity: 2
-            # TODO - enable logs? EnableCloudwatchLogsExports:
+            # enable logs?
+            # EnableCloudwatchLogsExports:
             #  - postgresql
             DBClusterParameterGroupName: !Ref RDSParameterGroup
             MasterUsername: !Sub "{{resolve:secretsmanager:${DBSecrets}:SecretString:dbUserName}}"
@@ -212,7 +213,7 @@ Resources:
             DBSubnetGroupName: !Ref RDSSubnetGroup
             VpcSecurityGroupIds:
                 - !Ref DatabaseSecurityGroup
-            # TODO - define when backups and maintenance run
+            # can define when backups and maintenance run
             # PreferredMaintenanceWindow:       "Sun:06:00-Sun:06:59"
             # PreferredBackupWindow:            "05:00-05:30"
             BackupRetentionPeriod: 7
