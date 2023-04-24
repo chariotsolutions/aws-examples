@@ -1,6 +1,6 @@
 .PHONY: default deploy package test quicktest init clean
 
-LAMBDA_NAME     ?= CloudTrail_to_Elasticsearch
+LAMBDA_NAME     ?= CloudTrail_to_OpenSearch
 
 POETRY_DIST_DIR := $(PWD)/dist
 BUILD_DIR       := $(PWD)/build
