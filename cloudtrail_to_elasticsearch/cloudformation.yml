@@ -1,17 +1,16 @@
 AWSTemplateFormatVersion:               "2010-09-09"
-Description:                            "Creates an Elasticsearch cluster and a Lambda function that will write CloudTrail events into it"
+Description:                            "Creates an OpenSearch cluster and a Lambda function that will write CloudTrail events into it"
 
 Parameters:
 
   LambdaName:
     Description:                        "Name for the Lambda function and associated resources"
     Type:                               "String"
-    Default:                            "CloudTrail_to_Elasticsearch"
+    Default:                            "CloudTrail_to_OpenSearch"
 
   CloudTrailBucket:
     Description:                        "The S3 bucket that holds CloudTrail events"
     Type:                               "String"
-    Default:                            ""
 
   CloudTrailPrefix:
     Description:                        "The path in that bucket for new CloudTrail event files, with trailing slash"
@@ -26,20 +25,20 @@ Parameters:
   OpenSearchInstanceType:
     Description:                        "Type of instance used for OpenSearch cluster; default is useful for small environment"
     Type:                               "String"
-    Default:                            "t3.medium.search"
+    Default:                            "t3.small.search"
 
   OpenSearchStorageType:
     Description:                        "Type of the OpenSearch storage volume (allowed types depend on instance type)"
     Type:                               "String"
-    Default:                            "gp2"
+    Default:                            "gp3"
 
   OpenSearchStorageSize:
     Description:                        "Size of the OpenSearch storage volume, in GB (allowed sizes depend on instance type)"
     Type:                               "Number"
-    Default:                            32
+    Default:                            64
 
   AllowedIPs:
-    Description:                        "IP addresses that are allowed to access Elasticsearch/Kibana (leave blank for none)"
+    Description:                        "IP addresses that are allowed to access OpenSearch/Kibana (leave blank for none)"
     Type:                               "CommaDelimitedList"
     Default:                            ""
 
@@ -50,11 +49,13 @@ Resources:
   ## OpenSearch cluster
   ##
 
-  ElasticSearchDomain:
+  OpenSearchDomain:
     Type:                               "AWS::OpenSearchService::Domain"
+    UpdatePolicy:
+      EnableVersionUpgrade:             true
     Properties:
       DomainName:                       !Ref OpenSearchDomainName
-      EngineVersion:                    "OpenSearch_1.2"
+      EngineVersion:                    "OpenSearch_2.5"
       ClusterConfig:
         InstanceType:                   !Ref OpenSearchInstanceType
         InstanceCount:                  1
@@ -124,14 +125,14 @@ Resources:
             Statement:
               Effect:                   "Allow"
               Action:                   [ "es:ESHttpGet", "es:ESHttpPost", "es:ESHttpPut" ]
-              Resource:                 [ !Sub "${ElasticSearchDomain.Arn}/*" ]
+              Resource:                 [ !Sub "${OpenSearchDomain.Arn}/*" ]
 
 
   LambdaFunction:
     Type:                               "AWS::Lambda::Function"
     Properties: 
       FunctionName:                     !Ref LambdaName
-      Description:                      "Reacts to CloudTrail files being stored on S3 by uploading them to Elasticsearch"
+      Description:                      "Reacts to CloudTrail files being stored on S3 by uploading them to OpenSearch"
       Role:                             !GetAtt LambdaRole.Arn
       Runtime:                          "python3.9"
       Handler:                          "cloudtrail_to_elasticsearch.lambda_handler.handle"
@@ -141,4 +142,4 @@ Resources:
       Timeout:                          60
       Environment: 
         Variables:
-          ES_HOSTNAME:                  !GetAtt ElasticSearchDomain.DomainEndpoint
+          ES_HOSTNAME:                  !GetAtt OpenSearchDomain.DomainEndpoint
