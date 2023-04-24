@@ -10,8 +10,8 @@ in which it no longer supports defining mapping types when creating an index.
 
 **You will incur charges for the OpenSearch cluster and Lambda invocations**,
 as well as for S3 storage of the raw CloudTrail events. The provided CloudFormation
-template creates a stack using a single `t2.medium.elasticsearch` instance and
-32 GB of disk.  This costs $1.75 per day plus storage charges of $0.32/month.
+template creates a stack using a single `t3.small.search` instance and 64 GB of disk.
+This costs approximately $34/month in US zones.
 
 **Amazon OpenSearch does not automatically clean up its indexes**. You can
 use an [Index State Management](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ism.html)
@@ -30,7 +30,7 @@ tab, and then removing the notification.
 This project consists of a single Lambda, written in Python. It has multiple modules,
 and uses the third-party [`requests`](https://pypi.org/project/requests/) and
 [`aws-requests-auth`](https://pypi.org/project/aws-requests-auth/) libraries to access
-Elasticsearch.
+OpenSearch.
 
 The easiest way to build is with `make`, and there are two Makefiles:
 
@@ -75,11 +75,13 @@ Deploying is a multi-step process:
    * Use server-side encryption on this bucket.
 
    * Enable [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
-     on that bucket, to ensure that an intruder can't delete the trails that show their activity.
-     Note that there are two types of Object Lock, and the "governance mode" locks can be overridden.
-     To ensure that an attacker cannot delete CloudTrail logs, you need to use a "legal hold," which
-     does not permit _any_ deletion of an object within its retention period (as such, you may want
-     to limit the retention period, especially if this is the first time that you've set up CloudTrail).
+     on that bucket, to ensure that an intruder can't delete the events that show their activity.
+     When you turn on object lock, you need to pick a retention mode and period. I recommend 90
+     days for the retention period, and "compliance" mode for the retention type.
+
+     **Beware:** compliance mode means that you _can not delete the object_ until the retention
+     period expires. This is good from a security perspective, but bad from a cost perspective
+     if you pick an over-long period.
 
    * Create a cross-region trail. By default, CloudTrail only records events from the _current_ region.
      You want to capture _all_ of the events for your account.
@@ -89,12 +91,12 @@ Deploying is a multi-step process:
 
 2. Create the OpenSearch cluster and Lambda
 
-   The [provided CloudFormation template](cloudformation.yml) will create an Amazon OpenSearch cluster
+   The [provided CloudFormation template](cloudformation.yml) creates an Amazon OpenSearch cluster
    and Lambda outside a VPC. This template has several parameters, most of which are optional:
 
     * `LambdaName`:
       (optional) The name of the Lambda function. This is also used to name the function's
-      execution role. Default: `CloudTrail_to_Elasticsearch`.
+      execution role. Default: `CloudTrail_to_OpenSearch`.
 
     * `CloudTrailBucket`:
       The name of the S3 bucket where CloudTrail is saving event logs. No default.
@@ -111,12 +113,17 @@ Deploying is a multi-step process:
 
     * `OpenSearchInstanceType`:
       (optional) The type of instance to use for the OpenSearch cluster. The default is
-      `t2.medium.elasticsearch`, which is sufficient for a few million events per month, but
-      may need to be increased if you're in a high-activity organization.
+      `t3.small.search`, which is sufficient for a few million events per month, but will
+      need to be increased if you're in a high-activity organization.
+
+    * `OpenSearchStorageType`:
+      The type of storage volume. This defaults to `gp3`, which gives a reasonable baseline
+      performance. The only reason that this is exposed as a parementer is that some instance
+      types do not support all storage types.
 
     * `OpenSearchStorageSize`:
       (optional) The size of the storage volume, in gigabytes. The maximum size depends on the
-      selected instance type; the default is 32.
+      selected instance type; the default is 64.
       
     * `AllowedIPs`:
       (optional) Used to construct a permissions policy for the OpenSearch cluster that allows
@@ -124,16 +131,16 @@ Deploying is a multi-step process:
       which you can find by Googleing for "what's my IP". If you have multiple public IP
       addresses, list them all, separated by a comma. No default.
 
+2. Build and deploy the Lambda.
+
    One of the annoying things about CloudFormation is that the `AWS::Lambda::Function` resource
    can either specify the Lambda deployment as 4k of literal text (confusingly named `ZipFile`)
    or as a reference to a deployment bundle stored on S3. There's no way to deploy a local file.
    As a result, I use a hack: the CloudFormation template deploys a dummy Lambda, which you must
-   replace in the next step.
+   then replace.
 
-2. Build and deploy the Lambda.
-
-   As noted above, you can build and deploy the Lambda via `make`. Here I use the Poetry version
-   of the Makefile:
+   You can build and deploy the Lambda this in one step using `make` (changing to `Makefile.pip`
+   if that's your preference):
 
    ```
    make -f Makefile.poetry deploy
@@ -149,7 +156,7 @@ Deploying is a multi-step process:
 3. Create the event trigger.
 
    CloudFormation requires you to configure bucket notifications at the time you create the bucket.
-   Since this post is about uploading CloudTrail events to Elasticsearch, and not about configuring
+   Since this post is about uploading CloudTrail events to OpenSearch, and not about configuring
    CloudTrail, I'm leaving this as a manual step:
 
    1. Open the Lambda function in the Console. 
@@ -161,7 +168,7 @@ Deploying is a multi-step process:
       is a Bad Idea (this Lambda doesn't do it).
    7. Click "Add"
 
-   Within a few minutes, you should be able to go to the Elasticsearch cluster and see a new
+   Within a few minutes, you should be able to go to the OpenSearch cluster and see a new
    index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). You can then
    configure this index in Kibana, and start to explore your API events.
 
@@ -170,6 +177,60 @@ Deploying is a multi-step process:
    Before using Kibana, you must [create an index pattern](https://www.elastic.co/guide/en/kibana/current/index-patterns.html).
    For indexes generated by this project, the pattern name should be `cloudtrail-*`, and the
    time filter field should be `eventTime`.
+
+
+# Bulk Upload
+
+If you already had CloudTrail enabled, then you can use a bulk upload process to load
+all existing events into your cluster (this will be much faster and easier than trying
+to trigger the Lambda).
+
+From within the project directory:
+
+1. Install all of the dependencies. You can use either of the Makefiles to do this.
+
+2. Set the necessary environment variables:
+
+    * `ES_HOSTNAME`: the hostname of the OpenSearch cluster
+    * `AWS_ACCESS_KEY_ID`: your AWS access key
+    * `AWS_SECRET_ACCESS_KEY`: your AWS secret key
+    * `AWS_SESSION_TOKEN` if you have assumed a role (eg, from using IAM Identity Center
+      to get credentials).
+    * `AWS_REGION`: region where the OpenSearch cluster resides
+
+    Note 1: the AWS keys are used to explicitly authorize the OpenSearch HTTPS requests,
+    so you can't use a configured profile.
+
+    Note 2: the provided AWS credentials must have the `es:ESHttpGet`, `es:ESHttpPost`, and
+    `es:ESHttpPut` permissions on the OpenSearch cluster.
+
+3. Run the program:
+
+    ```
+    PYTHONPATH=`pwd`/build python -m cloudtrail_to_elasticsearch.bulk_upload --dates 2022-04-01 2022-04-30 --s3 BUCKET_NAME CLOUDTRAIL_PREFIX
+    ```
+
+    The `PYTHONPATH` configuration makes your dependencies available (if you're using Poetry,
+    you could alternatively use `poetry run`).
+
+    The `--dates` option specifies a starting and ending date; you should start with the
+    date of the first CloudTrail events loaded to your S3 bucket, and end with the current
+    date. Updates are idempotent, so you can (and should) overlap with any events that are
+    already in OpenSearch. If you don't specify this parameter, the program will load
+    all events in your bucket -- which may take quite some time.
+
+    The `--s3` option tells the program to read from an S3 bucket and prefix; replace the
+    values shown here with those for your installation. 
+
+    If you've downloaded events, you can instead use the option `--local` with the path of
+    your download directory, and the program will read event files from there.
+
+Assuming that you've done everything right, you should see a series of "processing"
+messages that let you know what file is being processed, interspersed with "writing
+events" messages that tell you how many events have been written in each batch. The
+number of files may be quite long; I recommend using the `tee` program and saving
+the output to a file to make sure there are no errors.
+
 
 
 # Implementation Notes
@@ -362,52 +423,3 @@ uploads.
 
 So instead, we extract the year and month from the key that CloudTrail uses to write the
 event file. This is extracted via regular expression.
-
-
-# Bulk Upload
-
-The Lambda responds to new files arriving on S3. However, if you had CloudTrail enabled,
-you'll already have events stored on S3. To load these files into Elasticsearch, you can
-use the bulk loader, which can read from S3 or a local directory.
-
-1. Install all of the dependencies. You can use either of the Makefiles to do this.
-
-2. Set the necessary environment variables:
-
-    * `ES_HOSTNAME`: the hostname of the OpenSearch cluster
-    * `AWS_ACCESS_KEY_ID`: your AWS access key
-    * `AWS_SECRET_ACCESS_KEY`: your AWS secret key
-    * `AWS_REGION`: region where the OpenSearch cluster resides
-
-    Note 1: the AWS keys are used to explicitly authorize the OpenSearch HTTPS requests,
-    so you can't just use a configured profile.
-
-    Note 2: the provided AWS credentials must have the `es:ESHttpGet`, `es:ESHttpPost`, and
-    `es:ESHttpPut` permissions on the OpenSearch cluster.
-
-3. Run the program:
-
-    ```
-    PYTHONPATH=`pwd`/build python -m cloudtrail_to_elasticsearch.bulk_upload --dates 2022-04-01 2022-04-30 --s3 my_bucket cloudtrail_prefix
-    ```
-
-    The `PYTHONPATH` configuration makes your dependencies available (if you're using Poetry,
-    you could alternatively use `poetry run`).
-
-    The `--dates` option specifies a starting and ending date; you should start with the
-    date of the first CloudTrail events loaded to your S3 bucket, and end with the current
-    date. Updates are idempotent, so you can (and should) overlap with any events that are
-    already in OpenSearch. If you don't specify this parameter, the program will load
-    all events in your bucket -- which may take quite some time.
-
-    The `--s3` option tells the program to read from an S3 bucket and prefix; replace the
-    values shown here with those for your installation. If you've downloaded events, you
-    can use the option `--local` with the path of your download directory, and the program
-    will read event files from there.
-
-Assuming that you've done everything right, you should see a series of "processing"
-messages that let you know what file is being processed, interspersed with "writing
-events" messages that tell you how many events have been written in each batch. The
-number of files may be quite long; I recommend using the `tee` program and saving
-the output to a file to make sure there are no errors.
-
