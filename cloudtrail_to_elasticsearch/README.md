@@ -344,28 +344,34 @@ they should be.
 
 ```
 'mappings': {
-    'cloudtrail_event': {
-        'dynamic_templates': [
-            {
-                'flattened_requestParameters': {
-                        'path_match': 'requestParameters_flattened.*',
-                        'mapping': { 'type': 'text' }
-                }
-            }, {
-                'flattened_responseElements': {
-                        'path_match': 'responseElements_flattened.*',
-                        'mapping': { 'type': 'text' }
-                }
-            }, {
-                'flattened_resources': {
-                        'path_match': 'resources_flattened.*',
-                        'mapping': { 'type': 'text' }
-                }
+    'dynamic_templates': [
+        {
+            'flattened_requestParameters': {
+                    'path_match': 'requestParameters_flattened.*',
+                    'mapping': { 'type': 'text' }
             }
-        ],
-        'properties': {
-            'apiVersion': { 'type': 'text' }
+        }, 
+        {
+            'flattened_responseElements': {
+                    'path_match': 'responseElements_flattened.*',
+                    'mapping': { 'type': 'text' }
+            }
+        },
+        {
+            'flattened_serviceEventDetails': {
+                    'path_match': 'serviceEventDetails_flattened.*',
+                    'mapping': { 'type': 'text' }
+            }
+        },
+        {
+            'flattened_resources': {
+                    'path_match': 'resources_flattened.*',
+                    'mapping': { 'type': 'text' }
+            }
         }
+    ],
+    'properties': {
+        'apiVersion': { 'type': 'text' }
     }
 }
 ```
@@ -397,19 +403,19 @@ The Lambda also configures some basic index settings:
 
     By default, AWS Opensearch creates indexes with replicas. On a single-node
     cluster there's no place for those replicas to go. And given that the raw
-    event data is stored in S3, I think that there's little need to replicas in
-    any case. That will, of course, mean some amount of downtime if your cluster
-    ever fails, while you repopulate a new cluster.
+    event data is stored in S3, I think that there's little need for replicas.
+    That will, of course, mean some amount of downtime if your cluster ever
+    fails, while you repopulate a new cluster.
 
 One last thing about index creation: the code will check to see if the index exists before
 trying to create it. That works great during "normal" operation, in which CloudTrail delivers
 one file at a time to S3. However, if you upload a large number of files at once, Lambda will
 scale up the number of executing functions to match the number of files, and this can cause a
-race condition between creation and use that results in an error.
+race condition between index creation and use that results in an error.
 
 To solve this, I recommend setting reserved concurrency on the Lambda to 1, which will prevent
-concurrent executions. If you have a large number of CloudTrail files that already live on S3,
-Ir recommend using a [bulk upload](#bulk-upload).
+concurrent executions. And if you have a large number of CloudTrail files that already live on
+S3, Ir recommend using [bulk upload](#bulk-upload).
 
 
 ## Index names
@@ -421,5 +427,5 @@ Unfortunately, the files that we receive from S3 may contain events from differe
 it would increase the complexity of the code if we had to split each file into multiple
 uploads.
 
-So instead, we extract the year and month from the key that CloudTrail uses to write the
-event file. This is extracted via regular expression.
+So instead, we extract the year and month from the S3 object, via regular expression. These
+values are then inserted into the `cloudtrail-YYYY-MM` template string.
