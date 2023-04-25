@@ -44,12 +44,20 @@ DEFAULT_INDEX_CONFIG = json.dumps({
                         'path_match': 'requestParameters_flattened.*',
                         'mapping': { 'type': 'text' }
                 }
-            }, {
+            }, 
+            {
                 'flattened_responseElements': {
                         'path_match': 'responseElements_flattened.*',
                         'mapping': { 'type': 'text' }
                 }
-            }, {
+            },
+            {
+                'flattened_serviceEventDetails': {
+                        'path_match': 'serviceEventDetails_flattened.*',
+                        'mapping': { 'type': 'text' }
+                }
+            },
+            {
                 'flattened_resources': {
                         'path_match': 'resources_flattened.*',
                         'mapping': { 'type': 'text' }
@@ -133,6 +141,7 @@ def transform_events(events):
         flatten(event, 'requestParameters')
         flatten(event, 'responseElements')
         flatten(event, 'resources')
+        flatten(event, 'serviceEventDetails')
     return events
 
 

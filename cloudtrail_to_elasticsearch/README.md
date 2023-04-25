@@ -248,10 +248,10 @@ While the Lambda could explicitly transform each event into a standard format, t
 endless task: AWS constantly adds new API calls. Moreover, dynamic mapping is one of Elasticsearch's
 strengths; we should use it.
 
-My solution is to "flatten" the `requestParameters`, `responseElements`, and `resources` sub-objects
-before writing the event. This is best explained by example: the `RunInstances` API call returns an
-array of objects, one per instance created. The CloudTrail event looks like this (showing only the
-fields relevant to this example):
+My solution is to "flatten" the `requestParameters`, `responseElements`, `serviceEventDetails`, and
+`resources` sub-objects before writing the event. This is best explained by example: the `RunInstances`
+API call returns an array of objects, one per instance created. The CloudTrail event looks like this
+(showing only the fields relevant to this example):
 
 ```
 {
