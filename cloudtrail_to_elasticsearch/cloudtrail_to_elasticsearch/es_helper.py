@@ -21,7 +21,7 @@ import os
 
 from aws_requests_auth.aws_auth import AWSRequestsAuth
 
-DEFAULT_BATCH_SIZE = 7680 * 1024
+DEFAULT_BATCH_SIZE = 2048 * 1024
 
 
 class ESHelper:

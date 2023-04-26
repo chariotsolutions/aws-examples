@@ -143,3 +143,14 @@ Resources:
       Environment: 
         Variables:
           ES_HOSTNAME:                  !GetAtt OpenSearchDomain.DomainEndpoint
+
+
+Outputs:
+
+  OpenSearchArn:
+    Description:                        "The ARN of the OpenSearch cluster"
+    Value:                              !GetAtt OpenSearchDomain.Arn
+
+  OpenSearchHosname:
+    Description:                        "The hostname of the OpenSearch cluster"
+    Value:                              !GetAtt OpenSearchDomain.DomainEndpoint
