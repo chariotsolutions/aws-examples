@@ -1,6 +1,6 @@
 .PHONY: default deploy package init clean
 
-LAMBDA_NAME     ?= CloudTrail_to_Elasticsearch
+LAMBDA_NAME     ?= CloudTrail_to_OpenSearch
 
 SRC_DIR         := $(PWD)/cloudtrail_to_elasticsearch
 BUILD_DIR       := $(PWD)/build
