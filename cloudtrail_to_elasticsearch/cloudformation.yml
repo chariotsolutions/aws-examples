@@ -151,6 +151,6 @@ Outputs:
     Description:                        "The ARN of the OpenSearch cluster"
     Value:                              !GetAtt OpenSearchDomain.Arn
 
-  OpenSearchHosname:
+  OpenSearchHostname:
     Description:                        "The hostname of the OpenSearch cluster"
     Value:                              !GetAtt OpenSearchDomain.DomainEndpoint

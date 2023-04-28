@@ -18,6 +18,7 @@
 import json
 import requests
 import os
+import time
 
 from aws_requests_auth.aws_auth import AWSRequestsAuth
 
@@ -121,6 +122,8 @@ class ESHelper:
             self.current_batch_size = 0
         elif rsp.status_code == 429:
             print(f'upload throttled; retrying')
+            # give the server a chance to do whatever it needs to do
+            time.sleep(1.0)
             # we'll hope that it succeeds before we blow stack
             self.flush()
         else:

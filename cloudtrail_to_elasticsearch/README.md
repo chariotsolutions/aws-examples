@@ -261,7 +261,6 @@ number of files may be quite long; I recommend using the `tee` program and savin
 the output to a file to make sure there are no errors.
 
 
-
 # Implementation Notes
 
 ## Event transformation
@@ -458,3 +457,28 @@ uploads.
 
 So instead, we extract the year and month from the S3 object, via regular expression. These
 values are then inserted into the `cloudtrail-YYYY-MM` template string.
+
+
+# Other
+
+## If you upgrade or modify the cluster
+
+AWS requires regular upgrades of an OpenSearch cluster. Or you might want to change the
+cluster yourself, for example to add disk space. When that happens, you will lose events.
+
+OpenSearch does a blue-green deployment: it copies the old server data to the new cluster,
+and then switches the DNS entry. The old server will continue to accept updates right up
+to the point that it shuts down. Unfortunately, those updates will not find their way to
+the new server.
+
+To avoid losing events, record the start time of your server upgrade, and the timestamp
+when a new Lambda instance is spun up after the upgrade completes. Then look for all of
+the "processing" log entries between those two times (easy with CloudWatch Logs Insights),
+and use bulk upload to re-process the files.
+
+## If you change the instance type
+
+The "t3" instance types, used in the example CloudFormation template, do not support all
+of the features of OpenSearch (such as auto-tune). If you use the Console to change your
+instance type to a "standard" instance, then you may not be able to switch back: those
+unsupported features will be enabled when upgrading, and cannot be disabled when downgrading.
