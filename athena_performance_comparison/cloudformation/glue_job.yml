@@ -1,0 +1,114 @@
+##
+## CloudFormation template to create Glue conversion job. The job, and any associated
+## resources, will be named after the stack.
+##
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Glue job to transform JSON into Parquet and Avro"
+
+Parameters:
+
+  ScriptBucket:
+    Description:                        "Name of the S3 bucket where the transformation script lives"
+    Type:                               "String"
+
+  ScriptKey:
+    Description:                        "Key used to access transformation script"
+    Type:                               "String"
+
+  DataBucket:
+    Description:                        "Name of the S3 bucket where data is stored"
+    Type:                               "String"
+
+  JsonPrefix:
+    Description:                        "Prefix in that bucket for JSON (source) data; include trailing slash"
+    Type:                               "String"
+    Default:                            "clickstream-json"
+
+  AvroPrefix:
+    Description:                        "Prefix in that bucket for Avro (output) data; include trailing slash"
+    Type:                               "String"
+    Default:                            "clickstream-avro"
+
+  ParquetPrefix:
+    Description:                        "Prefix in that bucket for Parquet (output) data; include trailing slash"
+    Type:                               "String"
+    Default:                            "clickstream-parquet"
+
+  MaxCapacity:
+    Description:                        "Number of DPUs for the job"
+    Type:                               "Number"
+    Default:                            8
+
+
+Resources:
+
+  GlueExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-GlueExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["glue.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+      Policies:
+        - PolicyName:                   "ReadScript"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:                   "s3:GetObject"
+              Resource:                 !Sub "arn:aws:s3:::${ScriptBucket}/${ScriptKey}"
+        - PolicyName:                   "ReadSource"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:List*"
+                -                       "s3:GetObject*"
+              Resource:
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${JsonPrefix}"
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${JsonPrefix}*"
+        - PolicyName:                   "WriteOutput"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "s3:List*"
+                -                       "s3:DeleteObject"
+                -                       "s3:GetObject*"
+                -                       "s3:PutObject*"
+              Resource:
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${AvroPrefix}"
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${AvroPrefix}*"
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${ParquetPrefix}"
+                -                       !Sub "arn:aws:s3:::${DataBucket}/${ParquetPrefix}*"
+
+
+  Job:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Ref AWS::StackName
+      Description:                      "Transforms clickstream data from JSON to Avro and Parquet"
+      Role:                             !Ref GlueExecutionRole
+      GlueVersion:                      "4.0"
+      Command: 
+        Name:                           "glueetl"
+        PythonVersion:                  "3"
+        ScriptLocation:                 !Sub "s3://${ScriptBucket}/${ScriptKey}"
+      DefaultArguments: 
+        "--S3_BUCKET":                  !Ref DataBucket
+        "--AVRO_PREFIX":                !Ref AvroPrefix
+        "--JSON_PREFIX":                !Ref JsonPrefix
+        "--PARQUET_PREFIX":             !Ref ParquetPrefix
+      MaxCapacity:                      !Ref MaxCapacity
+      ExecutionProperty: 
+        MaxConcurrentRuns:              1
+      MaxRetries:                       0
+      Timeout:                          30
