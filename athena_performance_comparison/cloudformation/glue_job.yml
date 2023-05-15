@@ -15,6 +15,7 @@ Parameters:
   ScriptKey:
     Description:                        "Key used to access transformation script"
     Type:                               "String"
+    Default:                            "transform.py"
 
   DataBucket:
     Description:                        "Name of the S3 bucket where data is stored"
