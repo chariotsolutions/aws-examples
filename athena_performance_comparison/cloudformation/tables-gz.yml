@@ -1,0 +1,181 @@
+##
+## CloudFormation template to create table definitions.
+##
+## Each application of this template creates one set of tables, all using the same SerDe,
+## and existing under the same S3 prefix. To support all of the table variants, you will
+## need to create multiple stacks.
+##
+## To simplify the template, each stack also creates a Glue database named "athena-XXX",
+## where "XXX" is the specified data type.
+##
+## Note: this variant assumes compressed data.
+##
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Defines tables for Athena performance comparison"
+
+Parameters:
+
+  DataType:
+    Description:                        "The type of data: avro, json, or parquet"
+    Type:                               "String"
+    AllowedValues:                      [ "avro", "json", "parquet" ]
+
+  Bucket:
+    Description:                        "Name of the S3 bucket where data is stored"
+    Type:                               "String"
+
+  Prefix:
+    Description:                        "Prefix in that bucket for table data. Must include trailing slash"
+    Type:                               "String"
+
+
+Mappings:
+
+  StorageDescriptorMapping:
+    avro:
+      InputFormat:                      "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat"
+      OutputFormat:                     "org.apache.hadoop.hive.ql.io.avro.AvroContainerOutputFormat"
+    json:
+      InputFormat:                      "org.apache.hadoop.mapred.TextInputFormat"
+      OutputFormat:                     "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+    parquet:
+      InputFormat:                      "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+      OutputFormat:                     "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+
+  
+  SerdeInfoMapping:
+    avro:
+      SerializationLibrary:             "org.apache.hadoop.hive.serde2.avro.AvroSerDe"
+    json:
+      SerializationLibrary:             "org.openx.data.jsonserde.JsonSerDe"
+    parquet:
+      SerializationLibrary:             "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+
+
+  TimestampFieldMapping:
+    avro:
+      type:                             "bigint"
+    json:
+      type:                             "string"
+    parquet:
+      type:                             "timestamp"
+
+
+Resources:
+
+  Database:
+    Type:                               "AWS::Glue::Database"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseInput: 
+        Name:                           !Sub "athena-${DataType}-gz"
+        Description:                    "Contains data definitions for Athena performance comparision"
+
+
+  AddToCart:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref Database
+      TableInput: 
+        Name:                           "add_to_cart"
+        Description:                    "Events generated when a customer adds a product to their cart"
+        PartitionKeys:                  []
+        StorageDescriptor: 
+          Columns: 
+            - Name:                     "eventid"
+              Type:                     "string"
+              Comment:                  "Unique identifier for event"
+            - Name:                     "eventtype"
+              Type:                     "string"
+              Comment:                  "Type of event"
+            - Name:                     "timestamp"
+              Type:                     !FindInMap [TimestampFieldMapping, !Ref DataType, type]
+              Comment:                  "Event timestamp"
+            - Name:                     "userid"
+              Type:                     "string"
+              Comment:                  "The user that performed this action"
+            - Name:                     "productid"
+              Type:                     "string"
+              Comment:                  "The product added to the cart"
+            - Name:                     "quantity"
+              Type:                     "int"
+              Comment:                  "The number of units added to the cart"
+          Location:                     !Sub "s3://${Bucket}/${Prefix}addToCart/"
+          InputFormat:                  !FindInMap [StorageDescriptorMapping, !Ref DataType, InputFormat]
+          OutputFormat:                 !FindInMap [StorageDescriptorMapping, !Ref DataType, OutputFormat]
+          SerdeInfo: 
+            SerializationLibrary:       !FindInMap [SerdeInfoMapping, !Ref DataType, SerializationLibrary]
+          Compressed:                   true
+
+
+  CheckoutComplete:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref Database
+      TableInput: 
+        Name:                           "checkout_complete"
+        Description:                    "Events generated when a customer completes their checkout"
+        PartitionKeys:                  []
+        StorageDescriptor: 
+          Columns: 
+            - Name:                     "eventid"
+              Type:                     "string"
+              Comment:                  "Unique identifier for event"
+            - Name:                     "eventtype"
+              Type:                     "string"
+              Comment:                  "Type of event"
+            - Name:                     "timestamp"
+              Type:                     !FindInMap [TimestampFieldMapping, !Ref DataType, type]
+              Comment:                  "Event timestamp"
+            - Name:                     "userid"
+              Type:                     "string"
+              Comment:                  "The user that performed this action"
+            - Name:                     "itemsInCart"
+              Type:                     "int"
+              Comment:                  "The total number of items in the cart"
+            - Name:                     "totalValue"
+              Type:                     "decimal(10,2)"
+              Comment:                  "The total value of items in the cart"
+          Location:                     !Sub "s3://${Bucket}/${Prefix}checkoutComplete/"
+          InputFormat:                  !FindInMap [StorageDescriptorMapping, !Ref DataType, InputFormat]
+          OutputFormat:                 !FindInMap [StorageDescriptorMapping, !Ref DataType, OutputFormat]
+          SerdeInfo: 
+            SerializationLibrary:       !FindInMap [SerdeInfoMapping, !Ref DataType, SerializationLibrary]
+          Compressed:                   true
+
+
+  ProductPage:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref Database
+      TableInput: 
+        Name:                           "product_page"
+        Description:                    "Events generated when a customer looks at a product description"
+        PartitionKeys:                  []
+        StorageDescriptor: 
+          Columns: 
+            - Name:                     "eventid"
+              Type:                     "string"
+              Comment:                  "Unique identifier for event"
+            - Name:                     "eventtype"
+              Type:                     "string"
+              Comment:                  "Type of event"
+            - Name:                     "timestamp"
+              Type:                     !FindInMap [TimestampFieldMapping, !Ref DataType, type]
+              Comment:                  "Event timestamp"
+            - Name:                     "userid"
+              Type:                     "string"
+              Comment:                  "The user that performed this action"
+            - Name:                     "productid"
+              Type:                     "string"
+              Comment:                  "The product identifier"
+          Location:                     !Sub "s3://${Bucket}/${Prefix}productPage/"
+          InputFormat:                  !FindInMap [StorageDescriptorMapping, !Ref DataType, InputFormat]
+          OutputFormat:                 !FindInMap [StorageDescriptorMapping, !Ref DataType, OutputFormat]
+          SerdeInfo: 
+            SerializationLibrary:       !FindInMap [SerdeInfoMapping, !Ref DataType, SerializationLibrary]
+          Compressed:                   true
