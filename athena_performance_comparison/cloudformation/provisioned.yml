@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates a provisioned Redshift cluster"
+
+Parameters:
+
+  ServerName:
+    Description:                        "Used as the name of the Redshift Cluster and related resources (must be a valid hostname)"
+    Type:                               "String"
+    Default:                            "example"
+
+  VpcId:
+    Description:                        "VPC where the database will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  SubnetIds:
+    Description:                        "Subnets for database deployment (public if PubliclyAcessible is true, private otherwise)"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+  NodeType:
+    Description:                        "Type of cluster nodes"
+    Type:                               "String"
+    Default:                            "dc2.large"
+
+  NumberOfNodes:
+    Description:                        "The number of compute nodes in the cluster"
+    Type:                               "Number"
+    Default:                            2
+
+  Port:
+    Description:                        "Port number where the cluster listens for connectons"
+    Type:                               "Number"
+    Default:                            5439
+
+  PubliclyAccessible:
+    Description:                        "Whether or not the cluster is assigned a public IP"
+    Type:                               "String"
+    AllowedValues:                      [ "true", "false" ]
+    Default:                            "true"
+
+  AllowedCIDR:
+    Description:                        "Used to create a security group ingress rule that allows inbound connections"
+    Type:                               "String"
+    Default:                            ""
+
+  DataBucketName:
+    Description:                        "Name of the bucket holding source data for the external schema"
+    Type:                               "String"
+
+  DataBucketPrefix:
+    Description:                        "Optional prefix for data files within the bucket (with trailing slash)"
+    Type:                               "String"
+    Default:                            ""
+
+  GlueDatabase:
+    Description:                        "Optional name of the Glue database to be used as an external schema"
+    Type:                               "String"
+
+Conditions:
+
+  IsPubliclyAccessible:                 !Equals [ !Ref PubliclyAccessible, "true" ]
+  CreateIngressRule:                    !Not [ !Equals [ !Ref AllowedCIDR, "" ]]
+
+Resources:
+
+  DefaultRole:
+    Type:                               "AWS::IAM::Role"
+    Properties: 
+      RoleName:                         !Sub "Redshift-${ServerName}-Default-${AWS::Region}"
+      Description:                      "Allows Redshift to access AWS resources"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "redshift.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "External_Schema_Support"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                    "S3Get"
+                Effect:                 "Allow"
+                Action:                 "s3:GetObject*"
+                Resource:               !Sub "arn:aws:s3:::${DataBucketName}/${DataBucketPrefix}*"
+              - Sid:                    "S3List"
+                Effect:                 "Allow"
+                Action:                 "s3:ListBucket*"
+                Resource:               !Sub "arn:aws:s3:::${DataBucketName}"
+              - Sid:                    "Glue"
+                Effect:                 "Allow"
+                Action:
+                  -                     "glue:GetDatabase"
+                  -                     "glue:GetDatabases"
+                  -                     "glue:GetTable"
+                  -                     "glue:GetTables"
+                  -                     "glue:GetPartition"
+                  -                     "glue:GetPartitions"
+                  -                     "glue:BatchGetPartition"
+                Resource:                     
+                  -                     !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  -                     !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+                  -                     !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
+
+
+  ExternalSchemaPolicy:
+    Type:                               "AWS::IAM::Policy"
+    Properties: 
+      PolicyName:                       "External_Schema_Support"
+      Roles:                            [ !Ref DefaultRole ]
+      PolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Sid:                          "S3Get"
+            Effect:                       "Allow"
+            Action:                       "s3:GetObject*"
+            Resource:                     !Sub "arn:aws:s3:::${DataBucketName}/${DataBucketPrefix}*"
+          - Sid:                          "S3List"
+            Effect:                       "Allow"
+            Action:                       "s3:ListBucket*"
+            Resource:                     !Sub "arn:aws:s3:::${DataBucketName}"
+          - Sid:                          "Glue"
+            Effect:                       "Allow"
+            Action:
+              -                           "glue:GetDatabase"
+              -                           "glue:GetDatabases"
+              -                           "glue:GetTable"
+              -                           "glue:GetTables"
+              -                           "glue:GetPartition"
+              -                           "glue:GetPartitions"
+              -                           "glue:BatchGetPartition"
+            Resource:                     
+              -                           !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                                          !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+                                          !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
+
+
+  AdminSecret:
+    Type:                               "AWS::SecretsManager::Secret"
+    Properties:
+      Name:                             !Sub "Redshift-${ServerName}-Admin"
+      Description:                      !Sub "Admin username and password for ${ServerName} Redshift cluster"
+      GenerateSecretString:
+        SecretStringTemplate:           |
+                                        {
+                                          "username": "awsuser",
+                                          "database": "dev"
+                                        }
+        GenerateStringKey:              "password"
+        ExcludePunctuation:             true  # easier to select for those times that you need to copy/paste
+        PasswordLength:                 64    # there are a lot of digits in the number of permutations here
+
+
+  AdminSecretAttachment:
+    Type:                               "AWS::SecretsManager::SecretTargetAttachment"
+    Properties: 
+      SecretId:                         !Ref AdminSecret
+      TargetType:                       "AWS::Redshift::Cluster"
+      TargetId:                         !Ref Cluster 
+
+
+  SecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "DatabaseSecurityGroup-${ServerName}"
+      GroupDescription:                 "Allows access to the Redshift cluster"
+      VpcId:                            !Ref VpcId
+
+
+  SecurityGroupExternalIngress:
+    Type:                               "AWS::EC2::SecurityGroupIngress"
+    Condition:                          CreateIngressRule
+    Properties:
+      GroupId:                          !Ref SecurityGroup
+      Description:                      "external access"
+      IpProtocol:                       "tcp"
+      CidrIp:                           !Ref AllowedCIDR
+      FromPort:                         !Ref Port
+      ToPort:                           !Ref Port
+
+
+  SubnetGroup:
+    Type:                               "AWS::Redshift::ClusterSubnetGroup"
+    Properties:
+      Description:                       !Sub "Managed by CloudFormation: ${AWS::StackName}"
+      SubnetIds:                        !Ref SubnetIds
+
+
+  ParameterGroup:
+    Type:                               "AWS::Redshift::ClusterParameterGroup"
+    Properties:
+      Description:                      !Sub "Managed by CloudFormation: ${AWS::StackName}"
+      ParameterGroupFamily:             "redshift-1.0"
+
+
+  Cluster:
+    Type:                               "AWS::Redshift::Cluster"
+    Properties:
+      ClusterIdentifier:                !Ref ServerName
+      ClusterType:                      "multi-node"
+      NodeType:                         !Ref NodeType
+      NumberOfNodes:                    !Ref NumberOfNodes
+      ClusterParameterGroupName:        !Ref ParameterGroup
+      Encrypted:                        true
+      MasterUsername:                   !Sub "{{resolve:secretsmanager:${AdminSecret}:SecretString:username}}"
+      MasterUserPassword:               !Sub "{{resolve:secretsmanager:${AdminSecret}:SecretString:password}}"
+      DBName:                           !Sub "{{resolve:secretsmanager:${AdminSecret}:SecretString:database}}"
+      IamRoles:                         [ !GetAtt DefaultRole.Arn ]
+      ClusterSubnetGroupName:           !Ref SubnetGroup
+      PubliclyAccessible:               !If [ IsPubliclyAccessible, true, false ]
+      Port:                             !Ref Port
+      VpcSecurityGroupIds:              [ !Ref SecurityGroup ]
+      PreferredMaintenanceWindow:       "Sun:06:00-Sun:06:59"
+      AllowVersionUpgrade:              true
+      AutomatedSnapshotRetentionPeriod: 7
+
+Outputs:
+
+  ServerHostname:
+    Description:                        "Hostname used to connect to the database"
+    Value:                              !GetAtt Cluster.Endpoint.Address
+
+  DefaultRoleARN:
+    Description:                        "ARN of the cluster's default role"
+    Value:                              !GetAtt DefaultRole.Arn
+
+  DefaultRoleName:
+    Description:                        "Name of the cluster's default role (you need name, not ARN, to attach policies)"
+    Value:                              !Ref DefaultRole
+
+  AdminSecretARN:
+    Description:                        "ARN of the cluster's admin user secret"
+    Value:                              !Ref AdminSecret

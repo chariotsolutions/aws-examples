@@ -264,6 +264,171 @@ limit   10
 ```
 
 
+# Running the queries on Redshift
+
+Starting from the data and Glue table definitions from the previous section, it's easy
+to access that data from Redshift Spectrum and then load it into native Redshift tables.
+
+## Creating the Redshift cluster
+
+Start by creating your Redshift cluster/serverless namespace, either manally or with one
+of these CloudFormation templates:
+
+* [provisioned.yml](cloudformation/provisioned.yml) creates a provisioned cluster, defaulting
+  to 2 `dc2.large` nodes. This cluster will cost $0.50/hour in US regions.
+* [serverless.yml](cloudformation/serverless.yml) creates a serverless namespace/workspace,
+  defaulting to 8 Redshif Processing Units (RPUs). This namespace will cost $2.88/hour in
+  US regions, but will only incur charges while actually in use.
+
+Both templates require the following information:
+
+* VPC ID and a list of subnet IDs. If you want to make your cluster publicly accessible
+  (the default), these should be public subnets. Note that serverless requires three
+  subnets, while provisioned only requires one.
+* An optional CIDR that will be granted access to the server via security group.
+* The S3 bucket and prefix where your data is stored. I have tested using Parquet data,
+  but the JSON data should be fine. I'm a little worried about the Avro data, given
+  that it stores timestamps in microseconds.
+* The name of the Glue database where your table definitions are stored. Also from the
+  previous section.
+
+The templates have other parameters, but these are documented and have reasonable defaults.
+
+When you apply the template, CloudFormation will create the following resources:
+
+* A provisioned Redshift cluster or serverless namespace/workspace. By default, this is
+  named "example".
+* An IAM role that allows Redshift to access content stored in the S3 bucket.
+* A Secrets Manager secret that contains the admin user credentials for Redshift.
+
+After this, you should be able to connect to Redshift using the tool of your choice. You
+can get the endpoint from stack outputs, and retrieve the password from Secrets Manager.
+
+## Creating and using a Redshift Spectrum external schema 
+
+Redshift Spectrum allows you to access data stored on S3, using table definitions
+stored in a Glue data catalog. You'll need to know the default role ARN, which is
+an output of the CloudFormation stack, and the name of the Glue database.
+
+```
+create external schema ext_parquet from data catalog 
+database 'athena-parquet' 
+iam_role 'arn:aws:iam::123456789012:role/Redshift-example-Default-us-east-1';
+```
+
+You can find the table names from the [Glue Console](https://console.aws.amazon.com/glue/home#/v2/data-catalog/tables),
+and use a SQL statement verify that you can access them:
+
+```
+select  count(*)
+from    ext_parquet.add_to_cart;
+```
+
+## Creaating Redshift tables from external data
+
+While I don't think that Redshift Spectrum is a great tool for querying data in S3
+(Athena is more performant), it is a great way to get data into a Redshift cluster:
+
+```
+create table add_to_cart
+diststyle key
+distkey   ( userid )
+sortkey   ( "timestamp" )
+as
+select    *
+from      ext_parquet.add_to_cart;
+```
+
+```
+create table checkout_complete
+diststyle key
+distkey   ( userid )
+sortkey   ( "timestamp" )
+as
+select    *
+from      ext_parquet.checkout_complete;
+```
+
+```
+create table product_page
+diststyle key
+distkey   ( userid )
+sortkey   ( "timestamp" )
+as
+select    *
+from      ext_parquet.product_page;
+```
+
+## Queries
+
+All of these queries access the data stored on the Redshift cluster. Change the schema
+name from `public` to `ext_parquet` (or whatever you named the external schema) to see
+the performance of Redshift Spectrum. For more information about the queries, read the
+blog posts.
+
+* Query #1: top-10 best-selling products, as measured by cart adds
+
+  ```
+  select  productid, sum(quantity) as units_added
+  from    public.add_to_cart
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
+
+* Query #2: best-selling products in specific time range
+
+  Note: you will need to update the timestamps to match those of the actual data.
+
+  ```
+  select  productid, sum(quantity) as units_added
+  from    public.add_to_cart
+  where   "timestamp" between to_timestamp('2023-05-03 21:00:00', 'YYYY-MM-DD HH24:MI:SS')
+                          and to_timestamp('2023-05-03 22:00:00', 'YYYY-MM-DD HH24:MI:SS')
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
+
+* Query #3: products that are often viewed but not added to a cart
+
+  ```
+  select  productid,
+          (views - adds) as diff
+  from    (
+          select  pp.productid  as productid,
+                  count(distinct pp.eventid) as views, 
+                  count(distinct atc.eventid) as adds
+          from    public.product_page pp
+          join    public.add_to_cart atc 
+          on      atc.userid = pp.userid 
+          and     atc.productid = pp.productid
+          group   by pp.productid
+          )
+  order   by 2 desc
+  limit   10;
+  ```
+
+* Query #4: number of customers that abandoned carts
+
+  The data generator makes this number unnaturally high!
+
+  ```
+  select  count(distinct user_id) as users_with_abandoned_carts
+  from    (
+          select  atc.userid as user_id,
+                  max(atc."timestamp") as max_atc_timestamp,
+                  max(cc."timestamp") as max_cc_timestamp
+          from    public.add_to_cart atc
+          left join public.checkout_complete cc
+          on      cc.userid = atc.userid
+          group   by atc.userid
+          )
+  where   max_atc_timestamp > max_cc_timestamp
+  or      max_cc_timestamp is null;
+  ```
+
+
 # Cleaning Up
 
 To delete the Glue job and Athena table definitions, delete the CloudFormation stacks.
