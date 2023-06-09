@@ -118,6 +118,8 @@ create the stack, but you can use the CloudFormation Console or CLI):
    It should run for approximately 10 minutes given the data volume above (and the stack sets a timeout of 30 minutes).
 
 
+# Querying from Athena
+
 ## Create Glue table definitions
 
 At this point all of the table data is in place, but you need to create table definitions. There's
@@ -149,122 +151,117 @@ If you created GZipped JSON, there's a separate template for that:
 cf-deploy.py AthenaZippedJSON cloudformation/tables-gz.yml DataType=json  Bucket=com-chariotsolutions-kgregory-example Prefix=clickstream-json-gz/
 ```
 
-
-# Running the Queries
+## Run the Queries
 
 I've provided the Avro version of most of these queries. Replace `athena-avro` with `athena-json`, `athena-json-gz`,
 or `athena-parquet` to run the other variants. The one exception is query 2, which uses different date logic for
 each data type.
 
-## Query 1: top products added to cart
+* **Query 1: top products added to cart**
 
-```
-select  productid, sum(quantity) as units_added
-from    "athena-avro"."add_to_cart"
-group   by productid
-order   by units_added desc
-limit   10;
-```
+  ```
+  select  productid, sum(quantity) as units_added
+  from    "athena-avro"."add_to_cart"
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
 
+* **Query 2: top products added to cart in specific date range**
 
-## Query 2: top products added to cart in specific date range
+  To run this query, you need to first identify the range of generated data. I'm using the Parquet tables here because
+  they have the nicest date support:
 
-To run this query, you need to first identify the range of generated data. I'm using the Parquet tables here because
-they have the nicest date support:
+  ```
+  select  date_trunc('hour', "timestamp"), count(*)
+  from    "athena-parquet"."add_to_cart"
+  group   by 1
+  order   by 1 desc;
+  ```
 
-```
-select  date_trunc('hour', "timestamp"), count(*)
-from    "athena-parquet"."add_to_cart"
-group   by 1
-order   by 1 desc;
-```
+  Pick a range of dates that gives you whatever desired percentage of the table you want to query. Then replace the dates
+  in the queries below.
 
-Pick a range of dates that gives you whatever desired percentage of the table you want to query. Then replace the dates
-in these queries:
+  Avro variant:
 
-### Avro
+  ```
+  select  productid, sum(quantity) as units_added
+  from    "athena-avro"."add_to_cart"
+  where   from_unixtime("timestamp"/1000000) between from_iso8601_timestamp('2023-04-25T21:00:00') 
+                                                 and from_iso8601_timestamp('2023-04-25T22:00:00')
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
 
-```
-select  productid, sum(quantity) as units_added
-from    "athena-avro"."add_to_cart"
-where   from_unixtime("timestamp"/1000000) between from_iso8601_timestamp('2023-04-25T21:00:00') 
-                                               and from_iso8601_timestamp('2023-04-25T22:00:00')
-group   by productid
-order   by units_added desc
-limit   10;
-```
+  JSON / GZipped JSON Variant (change the schema name to `athena-json-gz` for the latter):
 
-### JSON / GZipped JSON
+  ```
+  select  productid, sum(quantity) as units_added
+  from    "athena-json"."add_to_cart"
+  where   "timestamp" between '2023-04-25 21:00:00' 
+                          and '2023-04-25 22:00:00'
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
 
-Change the database name to `athena-json-gz` for GZipped JSON.
+  Parquet variant:
 
-```
-select  productid, sum(quantity) as units_added
-from    "athena-json"."add_to_cart"
-where   "timestamp" between '2023-04-25 21:00:00' 
-                        and '2023-04-25 22:00:00'
-group   by productid
-order   by units_added desc
-limit   10;
-```
+  ```
+  select  productid, sum(quantity) as units_added
+  from    "athena-parquet"."add_to_cart"
+  where   "timestamp" between from_iso8601_timestamp('2023-04-25T21:00:00') 
+                          and from_iso8601_timestamp('2023-04-25T22:00:00')
+  group   by productid
+  order   by units_added desc
+  limit   10;
+  ```
 
-### Parquet
+* **Query 3: products ranked by difference between views and adds**
 
-```
-select  productid, sum(quantity) as units_added
-from    "athena-parquet"."add_to_cart"
-where   "timestamp" between from_iso8601_timestamp('2023-04-25T21:00:00') 
-                        and from_iso8601_timestamp('2023-04-25T22:00:00')
-group   by productid
-order   by units_added desc
-limit   10;
-```
+  It would be nice to add in a select-list expression `views - adds`, but apparently Athena
+  can not handle referencing an aliased expression in the same select list: it fails with
+  the message "Column 'views' cannot be resolved".
 
+  One of the key points of this query is that it involves almost all of the columns of the
+  two tables, so limits the ability of Parquet to limit scanned data.
 
-## Query 3: products ranked by difference between views and adds
-
-It would be nice to add in a select-list expression `views - adds`, but apparently Athena
-can not handle referencing an aliased expression in the same select list: it fails with
-the message "Column 'views' cannot be resolved".
-
-One of the key points of this query is that it involves almost all of the columns of the
-two tables, so limits the ability of Parquet to limit scanned data.
-
-```
-select  pp.productid, 
-        count(distinct pp.eventid) as views, 
-        count(distinct atc.eventid) as adds
-from    "athena-avro"."product_page" pp
-join    "athena-avro"."add_to_cart" atc 
-on      atc.userid = pp.userid 
-and     atc.productid = pp.productid
-group   by pp.productid
-order   by views - adds desc
-limit   10
-```
+  ```
+  select  pp.productid, 
+          count(distinct pp.eventid) as views, 
+          count(distinct atc.eventid) as adds
+  from    "athena-avro"."product_page" pp
+  join    "athena-avro"."add_to_cart" atc 
+  on      atc.userid = pp.userid 
+  and     atc.productid = pp.productid
+  group   by pp.productid
+  order   by views - adds desc
+  limit   10
+  ```
 
 
-## Query 4: abandoned carts
+* **Query 4: abandoned carts**
 
-I included this query because data warehouses often have issues with outer joins. But
-looking at the query's execution plan, it's almost identical query 3. It does, however,
-involve fewer columns, so should give Parquet an edge in terms of data scanned.
+  I included this query because data warehouses often have issues with outer joins. But
+  looking at the query's execution plan, it's almost identical to query 3. It does, however,
+  involve fewer columns, so should give Parquet an edge in terms of data scanned.
 
-```
-select  pp.productid, 
-        count(distinct pp.eventid) as views, 
-        count(distinct atc.eventid) as adds
-from    "athena-avro"."product_page" pp
-join    "athena-avro"."add_to_cart" atc 
-on      atc.userid = pp.userid 
-and     atc.productid = pp.productid
-group   by pp.productid
-order   by views - adds desc
-limit   10
-```
+  ```
+  select  pp.productid, 
+          count(distinct pp.eventid) as views, 
+          count(distinct atc.eventid) as adds
+  from    "athena-avro"."product_page" pp
+  join    "athena-avro"."add_to_cart" atc 
+  on      atc.userid = pp.userid 
+  and     atc.productid = pp.productid
+  group   by pp.productid
+  order   by views - adds desc
+  limit   10
+  ```
 
 
-# Running the queries on Redshift
+# Querying from Redshift
 
 Starting from the data and Glue table definitions from the previous section, it's easy
 to access that data from Redshift Spectrum and then load it into native Redshift tables.
@@ -324,7 +321,7 @@ select  count(*)
 from    ext_parquet.add_to_cart;
 ```
 
-## Creaating Redshift tables from external data
+## Creating Redshift tables from external data
 
 While I don't think that Redshift Spectrum is a great tool for querying data in S3
 (Athena is more performant), it is a great way to get data into a Redshift cluster:
@@ -366,7 +363,7 @@ name from `public` to `ext_parquet` (or whatever you named the external schema) 
 the performance of Redshift Spectrum. For more information about the queries, read the
 blog posts.
 
-* Query #1: top-10 best-selling products, as measured by cart adds
+* **Query 1: top-10 best-selling products, as measured by cart adds**
 
   ```
   select  productid, sum(quantity) as units_added
@@ -376,7 +373,7 @@ blog posts.
   limit   10;
   ```
 
-* Query #2: best-selling products in specific time range
+* **Query 2: best-selling products in specific time range**
 
   Note: you will need to update the timestamps to match those of the actual data.
 
@@ -390,7 +387,7 @@ blog posts.
   limit   10;
   ```
 
-* Query #3: products that are often viewed but not added to a cart
+* **Query 3: products that are often viewed but not added to a cart**
 
   ```
   select  productid,
@@ -409,9 +406,10 @@ blog posts.
   limit   10;
   ```
 
-* Query #4: number of customers that abandoned carts
+* **Query 4: number of customers that abandoned carts**
 
-  The data generator makes this number unnaturally high!
+  This query should play to Redshift's strengths: limited number of columns, and a
+  single-column join that uses the distribution key.
 
   ```
   select  count(distinct user_id) as users_with_abandoned_carts
