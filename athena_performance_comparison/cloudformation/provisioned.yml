@@ -103,38 +103,6 @@ Resources:
                   -                     !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
 
 
-  ExternalSchemaPolicy:
-    Type:                               "AWS::IAM::Policy"
-    Properties: 
-      PolicyName:                       "External_Schema_Support"
-      Roles:                            [ !Ref DefaultRole ]
-      PolicyDocument:
-        Version:                        "2012-10-17"
-        Statement:
-          - Sid:                          "S3Get"
-            Effect:                       "Allow"
-            Action:                       "s3:GetObject*"
-            Resource:                     !Sub "arn:aws:s3:::${DataBucketName}/${DataBucketPrefix}*"
-          - Sid:                          "S3List"
-            Effect:                       "Allow"
-            Action:                       "s3:ListBucket*"
-            Resource:                     !Sub "arn:aws:s3:::${DataBucketName}"
-          - Sid:                          "Glue"
-            Effect:                       "Allow"
-            Action:
-              -                           "glue:GetDatabase"
-              -                           "glue:GetDatabases"
-              -                           "glue:GetTable"
-              -                           "glue:GetTables"
-              -                           "glue:GetPartition"
-              -                           "glue:GetPartitions"
-              -                           "glue:BatchGetPartition"
-            Resource:                     
-              -                           !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
-                                          !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
-                                          !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
-
-
   AdminSecret:
     Type:                               "AWS::SecretsManager::Secret"
     Properties:
