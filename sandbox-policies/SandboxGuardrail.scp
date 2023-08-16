@@ -1,107 +1,111 @@
 {
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "LimitEC2InstanceType",
-			"Effect": "Deny",
-			"Action": [
-				"ec2:RunInstances"
-			],
-			"Resource": [
-				"arn:aws:ec2:*:*:instance/*"
-			],
-			"Condition": {
-				"StringNotLike": {
-					"ec2:InstanceType": [
-						"t2.*",
-						"t3.*",
-						"m5.large",
-						"m5d.large"
-					]
-				}
-			}
-		},
-		{
-			"Sid": "LimitRDSInstanceType",
-			"Effect": "Deny",
-			"Action": [
-				"rds:CreateDBInstance"
-			],
-			"Resource": [
-				"arn:aws:rds:*:*:db:*"
-			],
-			"Condition": {
-				"StringNotLike": {
-					"rds:DatabaseClass": [
-						"db.m5.large",
-						"db.t2.micro",
-						"db.t2.small",
-						"db.t2.medium",
-						"db.t3.micro",
-						"db.t3.small",
-						"db.t3.medium"
-					]
-				}
-			}
-		},
-		{
-			"Sid": "RestrictRegion",
-			"Effect": "Deny",
-			"Action": [
-				"autoscaling:Create*",
-				"backup:Create*",
-				"batch:Create*",
-				"cloudformation:Create*",
-				"cloudsearch:Create*",
-				"cognito-idp:Create*",
-				"dynamodb:Create*",
-				"ec2:Create*",
-				"ec2:Run*",
-				"ecr:Create*",
-				"ecs:Create*",
-				"eks:Create*",
-				"elasticbeanstalk:Create*",
-				"elasticfilesystem:Create*",
-				"elasticloadbalancing:Create*",
-				"elasticmapreduce:Run*",
-				"es:Create*",
-				"firehose:Create*",
-				"iot:Create*",
-				"kinesis:Create*",
-				"kinesisanalytics:Create*",
-				"lambda:Create*",
-				"lightsail:Create*",
-				"machinelearning:Create*",
-				"managedblockchain:Create*",
-				"rds:Create*",
-				"redshift:Create*",
-				"sagemaker:Create*",
-				"sagemaker:Start*",
-				"secretsmanager:Create*"
-			],
-			"Resource": [
-				"*"
-			],
-			"Condition": {
-				"StringNotEqualsIfExists": {
-					"aws:RequestedRegion": [
-						"us-east-1",
-						"us-east-2",
-						"us-west-1",
-						"us-west-2"
-					]
-				}
-			}
-		},
-		{
-			"Sid": "PreventPrivateACMActivity",
-			"Effect": "Deny",
-			"Action": [
-				"acm-pca:*"
-			],
-			"Resource": [
-				"*"
-			]
-		}
-	]
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "LimitEC2InstanceType",
+            "Effect": "Deny",
+            "Action": [
+                "ec2:RunInstances"
+            ],
+            "Resource": [
+                "arn:aws:ec2:*:*:instance/*"
+            ],
+            "Condition": {
+                "StringNotLike": {
+                    "ec2:InstanceType": [
+                        "t2.*",
+                        "t3.*",
+                        "t4g.*",
+                        "m5.large",
+                        "m5d.large",
+                        "m6g.medium",
+                        "m6g.large"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "LimitRDSInstanceType",
+            "Effect": "Deny",
+            "Action": [
+                "rds:CreateDBInstance"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Condition": {
+                "StringNotLike": {
+                    "rds:DatabaseClass": [
+                        "db.m5.large",
+                        "db.r5.large",
+                        "db.t2.*",
+                        "db.t3.*",
+                        "db.t4g.*",
+                        "db.serverless"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "RestrictRegion",
+            "Effect": "Deny",
+            "Action": [
+                "autoscaling:Create*",
+                "backup:Create*",
+                "batch:Create*",
+                "cloudformation:Create*",
+                "cloudsearch:Create*",
+                "cognito-idp:Create*",
+                "dynamodb:Create*",
+                "ec2:Create*",
+                "ec2:Run*",
+                "ecr:Create*",
+                "ecs:Create*",
+                "eks:Create*",
+                "elasticbeanstalk:Create*",
+                "elasticfilesystem:Create*",
+                "elasticloadbalancing:Create*",
+                "elasticmapreduce:Run*",
+                "es:Create*",
+                "firehose:Create*",
+                "iot:Create*",
+                "kinesis:Create*",
+                "kinesisanalytics:Create*",
+                "lambda:Create*",
+                "lightsail:Create*",
+                "machinelearning:Create*",
+                "managedblockchain:Create*",
+                "rds:Create*",
+                "redshift:Create*",
+                "sagemaker:Create*",
+                "sagemaker:Start*",
+                "secretsmanager:Create*"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Condition": {
+                "StringNotEqualsIfExists": {
+                    "aws:RequestedRegion": [
+                        "us-east-1",
+                        "us-east-2",
+                        "us-west-1",
+                        "us-west-2"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "PreventCreatingExpensiveThings",
+            "Effect": "Deny",
+            "Action": [
+                "acm-pca:*",
+                "glue:CreateDevEndpoint",
+                "glue:CreateSession"
+            ],
+            "Resource": [
+                "*"
+            ]
+        }
+    ]
 }
