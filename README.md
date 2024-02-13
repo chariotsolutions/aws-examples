@@ -10,6 +10,12 @@ in more detail:
   A Lambda that uploads CloudTrail events to an Elasticsearch cluster. Referenced by
   [Delving into CloudTrail Events](https://chariotsolutions.com/blog/post/delving-into-cloudtrail-events/).
 
+* [cloudtrail_aggregation](cloudtrail_aggregation)
+
+  A Lambda-based pipeline to aggregate individual CloudTrail log files into daily and
+  monthly versions. Also appropriate for use with other bursty data sources that produce
+  large numbers of relatively small file (eg, Kinesis Firehouse pipelines).
+
 * [infrastructure-tools-comparison](infrastructure-tools-comparison)
 
   Examples for creating users, groups, and roles using CloudFormation, Cloud Development

@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Monthly aggregation of CloudTrail events into Parquet"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "cloudtrail-aggregation-monthly"
+
+  FunctionMemory:
+    Description:                        "Memory size, in MB, for Lambda function (increase if you increase rows per file)"
+    Type:                               "Number"
+    Default:                            1536
+
+  PythonVersion:
+    Description:                        "The version of Python to use for the Lambda"
+    Type:                               "String"
+    Default:                            "3.11"
+
+  NumpyLayerArn:
+    Description:                        "ARN for a layer containing a compatible version of the NumPy library (must include layer version)"
+    Type:                               "String"
+
+  PyArrowLayerArn:
+    Description:                        "ARN for a layer containing a compatible version of the PyArrow library (must include layer version)"
+    Type:                               "String"
+
+  MaximumConcurrency:
+    Description:                        "The number of concurrent Lambda executions; increase to handle a backlog (minimum is 2)"
+    Type:                               "Number"
+    Default:                            2
+
+  SrcBucket:
+    Description:                        "Name of the bucket holding daily CloudTrail logs"
+    Type:                               "String"
+
+  SrcPrefix:
+    Description:                        "Prefix for raw CloudTrail logs"
+    Type:                               "String"
+    Default:                            "cloudtrail-daily/"
+
+  DstBucket:
+    Description:                        "Name of the bucket that will receive monthly logs"
+    Type:                               "String"
+
+  DstPrefix:
+    Description:                        "Prefix for aggregated CloudTrail logs in the destination bucket (must include trailing slash)"
+    Type:                               "String"
+    Default:                            "cloudtrail-monthly/"
+
+  RowsPerFile:
+    Description:                        "The number of rows to store in a single output file"
+    Type:                               "Number"
+    Default:                            250000
+
+
+Resources:
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName:                   "OperationalPolicy"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                      "ListSource"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:ListBucket"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}"
+              - Sid:                      "ReadSource"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:GetObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}/${SrcPrefix}*"
+              - Sid:                      "WriteDestination"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:PutObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${DstBucket}/${DstPrefix}*"
+              - Sid:                      "SQS"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "sqs:ReceiveMessage"
+                  -                       "sqs:DeleteMessage"
+                  -                       "sqs:GetQueueAttributes"
+                Resource:                 
+                  -                       !GetAtt TriggerQueue.Arn
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Stage 2 CloudTrail aggregation: combines a months's NDJSON files into a single Parquet file"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          !Sub "python${PythonVersion}"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        def lambda_handler(event, context):
+                                            print("this is a dummy handler; replace with contents of lambda.py")
+      Layers:
+        -                               !Ref NumpyLayerArn
+        -                               !Ref PyArrowLayerArn
+      MemorySize:                       !Ref FunctionMemory
+      Timeout:                          900
+      Environment:
+        Variables:
+          LOG_LEVEL:                    "INFO"
+          SRC_BUCKET:                   !Ref SrcBucket
+          SRC_PREFIX:                   !Ref SrcPrefix
+          DST_BUCKET:                   !Ref DstBucket
+          DST_PREFIX:                   !Ref DstPrefix
+          ROWS_PER_FILE:                !Ref RowsPerFile
+
+
+  TriggerQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-trigger"
+      MessageRetentionPeriod:           1209600
+      VisibilityTimeout:                1200  # 20 minutes; will redrive if Lambda times out
+      RedrivePolicy: 
+        deadLetterTargetArn:            !GetAtt TriggerDLQ.Arn
+        maxReceiveCount:                1
+
+
+  TriggerDLQ:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-dlq"
+      MessageRetentionPeriod:           1209600
+
+
+  Trigger:
+    Type:                               "AWS::Lambda::EventSourceMapping"
+    Properties:
+      BatchSize:                        1
+      EventSourceArn:                   !GetAtt TriggerQueue.Arn
+      FunctionName:                     !GetAtt LambdaFunction.Arn
+      ScalingConfig: 
+        MaximumConcurrency:             !Ref MaximumConcurrency 
+
+Outputs:
+
+  TriggerQueueUrl:
+    Description:                        "URL of the queue that triggers Lambda"
+    Value:                              !Ref TriggerQueue

@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Monthly aggregation of CloudTrail events into Parquet, using Lambda Container Image"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "cloudtrail-aggregation-monthly"
+
+  ImageUri:
+    Description:                        "Fully qualified image URI"
+    Type:                               "String"
+
+  FunctionMemory:
+    Description:                        "Memory size, in MB, for Lambda function (increase if you increase number of rows)"
+    Type:                               "Number"
+    Default:                            2048
+
+  MaximumConcurrency:
+    Description:                        "The number of concurrent Lambda executions; increase to handle a backlog (minimum is 2)"
+    Type:                               "Number"
+    Default:                            2
+
+  SrcBucket:
+    Description:                        "Name of the bucket holding daily CloudTrail logs"
+    Type:                               "String"
+
+  SrcPrefix:
+    Description:                        "Prefix for raw CloudTrail logs"
+    Type:                               "String"
+    Default:                            "cloudtrail-daily/"
+
+  DstBucket:
+    Description:                        "Name of the bucket that will receive monthly logs"
+    Type:                               "String"
+
+  DstPrefix:
+    Description:                        "Prefix for aggregated CloudTrail logs in the destination bucket (must include trailing slash)"
+    Type:                               "String"
+    Default:                            "cloudtrail-monthly/"
+
+  RowsPerFile:
+    Description:                        "The number of rows to store in a single output file"
+    Type:                               "Number"
+    Default:                            250000
+
+
+Resources:
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName:                   "OperationalPolicy"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                      "ListSource"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:ListBucket"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}"
+              - Sid:                      "ReadSource"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:GetObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}/${SrcPrefix}*"
+              - Sid:                      "WriteDestination"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:PutObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${DstBucket}/${DstPrefix}*"
+              - Sid:                      "SQS"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "sqs:ReceiveMessage"
+                  -                       "sqs:DeleteMessage"
+                  -                       "sqs:GetQueueAttributes"
+                Resource:                 
+                  -                       !GetAtt TriggerQueue.Arn
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Stage 2 CloudTrail aggregation: combines a months's NDJSON files into a single Parquet file"
+      Role:                             !GetAtt LambdaRole.Arn
+      PackageType:                      "Image"
+      Code:
+        ImageUri:                       !Ref ImageUri
+      MemorySize:                       !Ref FunctionMemory
+      Timeout:                          900
+      Environment:
+        Variables:
+          LOG_LEVEL:                    "INFO"
+          SRC_BUCKET:                   !Ref SrcBucket
+          SRC_PREFIX:                   !Ref SrcPrefix
+          DST_BUCKET:                   !Ref DstBucket
+          DST_PREFIX:                   !Ref DstPrefix
+          ROWS_PER_FILE:                !Ref RowsPerFile
+
+
+  TriggerQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-trigger"
+      MessageRetentionPeriod:           1209600
+      VisibilityTimeout:                1200  # 20 minutes; will redrive if Lambda times out
+      RedrivePolicy: 
+        deadLetterTargetArn:            !GetAtt TriggerDLQ.Arn
+        maxReceiveCount:                1
+
+
+  TriggerDLQ:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-dlq"
+      MessageRetentionPeriod:           1209600
+
+
+  Trigger:
+    Type:                               "AWS::Lambda::EventSourceMapping"
+    Properties:
+      BatchSize:                        1
+      EventSourceArn:                   !GetAtt TriggerQueue.Arn
+      FunctionName:                     !GetAtt LambdaFunction.Arn
+      ScalingConfig: 
+        MaximumConcurrency:             !Ref MaximumConcurrency 
