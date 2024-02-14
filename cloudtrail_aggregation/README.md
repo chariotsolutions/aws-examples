@@ -1,6 +1,6 @@
 # CloudTrail Aggregation
 
-This directory contains example programs for the blog post [Aggregating CloudTrail Log Files](https://chariotsolutions.com/blog/post/aggregating-files-in-your-data-warehouse).
+This directory contains example programs for the blog post [Aggregating Files In Your Data Lake](https://chariotsolutions.com/blog/post/aggregating-files-in-your-data-lake-part-1/).
 It consists of the following pieces:
 
 * [Stage 1](stage-1): a Lambda that aggregates raw CloudTrail log files into compressed NDJSON
