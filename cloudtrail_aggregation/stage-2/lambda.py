@@ -17,22 +17,30 @@ import pyarrow.parquet as pq
 from datetime import datetime
 
 SCHEMA = pa.schema([
-    pa.field('eventID', pa.string()),
-    pa.field('requestID', pa.string()),
-    pa.field('sharedEventID', pa.string()),
-    pa.field('eventTime', pa.timestamp('ms')),
-    pa.field('eventName', pa.string()),
-    pa.field('eventSource', pa.string()),
-    pa.field('eventVersion', pa.string()),
-    pa.field('awsRegion', pa.string()),
-    pa.field('sourceIPAddress', pa.string()),
-    pa.field('recipientAccountId', pa.string()),
-    pa.field('userIdentity', pa.string()),
-    pa.field('requestParameters', pa.string()),
-    pa.field('responseElements', pa.string()),
-    pa.field('additionalEventData', pa.string()),
+    pa.field('event_id', pa.string()),
+    pa.field('request_id', pa.string()),
+    pa.field('shared_event_id', pa.string()),
+    pa.field('event_time', pa.timestamp('ms')),
+    pa.field('event_name', pa.string()),
+    pa.field('event_source', pa.string()),
+    pa.field('event_version', pa.string()),
+    pa.field('aws_region', pa.string()),
+    pa.field('source_ip_address', pa.string()),
+    pa.field('recipient_account_id', pa.string()),
+    pa.field('user_identity', pa.string()),
+    pa.field('request_parameters', pa.string()),
+    pa.field('response_elements', pa.string()),
+    pa.field('additional_event_data', pa.string()),
     pa.field('resources', pa.string()),
 ])
+
+NESTED_OBJECTS = {
+    'userIdentity':         'user_identity',
+    'requestParameters':    'request_parameters',
+    'responseElements':     'response_elements',
+    'additionalEventData':  'additional_event_data',
+    'resources':            'resources'
+}
 
 s3_client = boto3.client('s3')
 
@@ -124,22 +132,22 @@ def transform_record(src_rec):
         """
     rec = json.loads(src_rec)
     xformed = {
-        'eventID': rec.get('eventID'),
-        'requestID': rec.get('requestID'),
-        'sharedEventID': rec.get('sharedEventID'),
-        'eventTime': datetime.fromisoformat(rec.get('eventTime')),
-        'eventName': rec.get('eventName'),
-        'eventSource': rec.get('eventSource'),
-        'eventVersion': rec.get('eventVersion'),
-        'awsRegion': rec.get('awsRegion'),
-        'sourceIPAddress': rec.get('sourceIPAddress'),
-        'recipientAccountId': rec.get('recipientAccountId'),
+        'event_id': rec.get('eventID'),
+        'request_id': rec.get('requestID'),
+        'shared_event_id': rec.get('sharedEventID'),
+        'event_time': datetime.fromisoformat(rec.get('eventTime')),
+        'event_name': rec.get('eventName'),
+        'event_source': rec.get('eventSource'),
+        'event_version': rec.get('eventVersion'),
+        'aws_region': rec.get('awsRegion'),
+        'source_ip_address': rec.get('sourceIPAddress'),
+        'recipient_account_id': rec.get('recipientAccountId'),
     }
-    for nested_key in ['userIdentity', 'requestParameters', 'responseElements', 'additionalEventData', 'resources']:
-        if rec.get(nested_key):
-            xformed[nested_key] = json.dumps(rec.get(nested_key))
+    for src_key, dst_key in NESTED_OBJECTS.items():
+        if rec.get(src_key):
+            xformed[dst_key] = json.dumps(rec.get(src_key))
         else:
-            xformed[nested_key] = None
+            xformed[dst_key] = None
     return xformed
 
 
