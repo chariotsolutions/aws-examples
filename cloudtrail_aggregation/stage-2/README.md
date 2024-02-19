@@ -20,6 +20,15 @@ I solve this problem in two ways: with Lambda layers and a Lambda Container Imag
 Of these, I think the container image is a better choice.
 
 
+## Prerequisites
+
+You must have an existing bucket that contains source NDJSON files, as well as a
+destination bucket for the Parquet files (they may be the same bucket, using
+different prefixes). If this bucket is in a different account from that running the
+Lambda, it must have a bucket policy that allows `s3:ListBucket`, `s3:GetObject`,
+and s3:PutObject` for the invoking account.
+
+
 ## Layers
 
 A deployed Lambda can have up to five layers, each of which can be up to 50 MB of
@@ -109,3 +118,10 @@ The reason is that you might want to aggregate at the start of each month, or ev
 once the daily Lambda has run. In the latter case, while you could implement a scheduler
 rule, I think it would be better if the stage-1 Lambda published an event when it was
 done.
+
+
+## Creating an Athena table
+
+The file [table.ddl](table.ddl) contains DDL for the monthly aggregation table. Edit
+this file, replacing `BUCKET` and `BASE_PREFIX` with the actual values for your data
+(eg, `cloudtrail-monthly`), then paste into an Athena query window.

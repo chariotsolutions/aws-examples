@@ -33,12 +33,6 @@ Parameters:
 
 Resources:
 
-  DestBucket:
-    Type:                               "AWS::S3::Bucket"
-    Properties: 
-      BucketName:                       !Ref DstBucket
-
-
   LambdaLogGroup:
     Type:                               "AWS::Logs::LogGroup"
     DeletionPolicy:                     "Delete"

@@ -34,13 +34,25 @@ SCHEMA = pa.schema([
     pa.field('resources', pa.string()),
 ])
 
-NESTED_OBJECTS = {
-    'userIdentity':         'user_identity',
-    'requestParameters':    'request_parameters',
-    'responseElements':     'response_elements',
-    'additionalEventData':  'additional_event_data',
-    'resources':            'resources'
-}
+TRANSFORM = [
+    # src field name            dst field name              transform fn
+    #------------------------------------------------------------------
+    ('eventID',                 'event_id',                 str),
+    ('requestID',               'request_id',               str),
+    ('sharedEventID',           'shared_event_id',          str),
+    ('eventTime',               'event_time',               datetime.fromisoformat),
+    ('eventName',               'event_name',               str),
+    ('eventSource',             'event_source',             str),
+    ('eventVersion',            'event_version',            str),
+    ('awsRegion',               'aws_region',               str),
+    ('sourceIPAddress',         'source_ip_address',        str),
+    ('recipientAccountId',      'recipient_account_id',     json.dumps),
+    ('userIdentity',            'user_identity',            json.dumps),         
+    ('requestParameters',       'request_parameters',       json.dumps),    
+    ('responseElements',        'response_elements',        json.dumps),     
+    ('additionalEventData',     'additional_event_data',    json.dumps),
+    ('resources',               'resources',                json.dumps),
+]
 
 s3_client = boto3.client('s3')
 
@@ -131,21 +143,10 @@ def transform_record(src_rec):
         our output schema.
         """
     rec = json.loads(src_rec)
-    xformed = {
-        'event_id': rec.get('eventID'),
-        'request_id': rec.get('requestID'),
-        'shared_event_id': rec.get('sharedEventID'),
-        'event_time': datetime.fromisoformat(rec.get('eventTime')),
-        'event_name': rec.get('eventName'),
-        'event_source': rec.get('eventSource'),
-        'event_version': rec.get('eventVersion'),
-        'aws_region': rec.get('awsRegion'),
-        'source_ip_address': rec.get('sourceIPAddress'),
-        'recipient_account_id': rec.get('recipientAccountId'),
-    }
-    for src_key, dst_key in NESTED_OBJECTS.items():
+    xformed = {}
+    for src_key, dst_key, xform_fn in TRANSFORM:
         if rec.get(src_key):
-            xformed[dst_key] = json.dumps(rec.get(src_key))
+            xformed[dst_key] = xform_fn(rec.get(src_key))
         else:
             xformed[dst_key] = None
     return xformed
