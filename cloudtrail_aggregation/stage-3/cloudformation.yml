@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Monthly aggregation of CloudTrail events into Parquet using Athena"
+
+Parameters:
+
+  LambdaName:
+    Description:                        "Name for the Lambda function and associated resources"
+    Type:                               "String"
+    Default:                            "cloudtrail-aggregation-athena"
+
+  FunctionMemory:
+    Description:                        "Memory size, in MB, for Lambda function (should not need to be increased)"
+    Type:                               "Number"
+    Default:                            256
+
+  PythonVersion:
+    Description:                        "The version of Python to use for the Lambda"
+    Type:                               "String"
+    Default:                            "3.11"
+
+  AthenaWorkgroup:
+    Description:                        "Name of the Athena workgroup in which to run this query"
+    Type:                               "String"
+
+  AthenaWorkgroupBucket:
+    Description:                        "Name of the bucket that holds results for the Athena workgroup"
+    Type:                               "String"
+
+  AthenaWorkgroupPrefix:
+    Description:                        "Prefix for Athena workgroup results (if any); must include trailing slash"
+    Type:                               "String"
+    Default:                            ""
+    
+  GlueDatabase:
+    Description:                        "Name of the Glue database where table definitions are stored"
+    Type:                               "String"
+    Default:                            "default"
+    
+  SrcTableName:
+    Description:                        "Name of the source table"
+    Type:                               "String"
+    Default:                            "cloudtrail_daily"
+
+  SrcBucket:
+    Description:                        "Name of the bucket holding daily CloudTrail logs"
+    Type:                               "String"
+
+  SrcPrefix:
+    Description:                        "Prefix for source table's data; must include trailing slash"
+    Type:                               "String"
+    Default:                            "cloudtrail-daily/"
+    
+  DstTableName:
+    Description:                        "Name of the long-lived destination table"
+    Type:                               "String"
+    Default:                            "cloudtrail_athena"
+
+  DstBucket:
+    Description:                        "Name of the bucket that will receive monthly logs"
+    Type:                               "String"
+
+  DstPrefix:
+    Description:                        "Prefix for the destination table's data; must include trailing slash"
+    Type:                               "String"
+    Default:                            "cloudtrail-athena/"
+
+
+Resources:
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${LambdaName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${LambdaName}-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName:                   "OperationalPolicy"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                      "AthenaQuery"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "athena:GetWorkGroup"
+                  -                       "athena:StartQueryExecution"
+                  -                       "athena:GetQueryExecution"
+                  -                       "athena:GetQueryResults"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkgroup}"
+              - Sid:                      "AthenaBucket"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:AbortMultipartUpload"
+                  -                       "s3:GetBucketLocation"
+                  -                       "s3:GetObject"
+                  -                       "s3:ListBucket"
+                  -                       "s3:ListMultipartUploadParts"
+                  -                       "s3:PutObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${AthenaWorkgroupBucket}"
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${AthenaWorkgroupBucket}/${AthenaWorkgroupPrefix}*"
+              - Sid:                      "ReadSourceBucket"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:GetBucketLocation"
+                  -                       "s3:GetObject"
+                  -                       "s3:ListBucket"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}"
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${SrcBucket}/${SrcPrefix}*"
+              - Sid:                      "WriteDestBucket"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "s3:AbortMultipartUpload"
+                  -                       "s3:GetBucketLocation"
+                  -                       "s3:GetObject"
+                  -                       "s3:DeleteObject"
+                  -                       "s3:ListBucket"
+                  -                       "s3:ListMultipartUploadParts"
+                  -                       "s3:PutObject"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${DstBucket}"
+                  -                       !Sub "arn:${AWS::Partition}:s3:::${DstBucket}/${DstPrefix}*"
+              - Sid:                      "Glue"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "glue:CreateTable"
+                  -                       "glue:DeletePartition"
+                  -                       "glue:DeleteTable"
+                  -                       "glue:GetDatabase"
+                  -                       "glue:GetDatabases"
+                  -                       "glue:GetPartition"
+                  -                       "glue:GetPartitions"
+                  -                       "glue:GetTable"
+                  -                       "glue:GetTables"
+                Resource:                 
+                  -                       !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  -                       !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+                  -                       !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
+              - Sid:                      "TriggerQueue"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "sqs:ReceiveMessage"
+                  -                       "sqs:DeleteMessage"
+                  -                       "sqs:GetQueueAttributes"
+                Resource:                 
+                  -                       !GetAtt TriggerQueue.Arn
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref LambdaName
+      Description:                      "Performs monthly aggregation of CloudTrail log files using Athena queries"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          !Sub "python${PythonVersion}"
+      Handler:                          "index.lambda_handler"
+      Code:
+        ZipFile:                        |
+                                        def lambda_handler(event, context):
+                                            print("this is a dummy handler; replace with contents of lambda.py")
+      MemorySize:                       !Ref FunctionMemory
+      Timeout:                          60
+      Environment:
+        Variables:
+          LOG_LEVEL:                    "INFO"
+          ATHENA_WORKGROUP:             !Ref AthenaWorkgroup
+          GLUE_DATABASE:                !Ref GlueDatabase
+          SRC_TABLE_NAME:               !Ref SrcTableName
+          DST_TABLE_NAME:               !Ref DstTableName
+          DST_BUCKET:                   !Ref DstBucket
+          DST_PREFIX:                   !Ref DstPrefix
+
+
+  TriggerQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-trigger"
+      MessageRetentionPeriod:           1209600
+      VisibilityTimeout:                1200  # 20 minutes; will redrive if Lambda times out
+      RedrivePolicy: 
+        deadLetterTargetArn:            !GetAtt TriggerDLQ.Arn
+        maxReceiveCount:                1
+
+
+  TriggerDLQ:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-dlq"
+      MessageRetentionPeriod:           1209600
+
+
+  Trigger:
+    Type:                               "AWS::Lambda::EventSourceMapping"
+    Properties:
+      BatchSize:                        1
+      EventSourceArn:                   !GetAtt TriggerQueue.Arn
+      FunctionName:                     !GetAtt LambdaFunction.Arn
+
+Outputs:
+
+  TriggerQueueUrl:
+    Description:                        "URL of the queue that triggers Lambda"
+    Value:                              !Ref TriggerQueue

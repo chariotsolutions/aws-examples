@@ -1,0 +1,84 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AthenaQuery",
+            "Effect": "Allow",
+            "Action": [
+                "athena:GetWorkGroup",
+                "athena:StartQueryExecution",
+                "athena:GetQueryExecution",
+                "athena:GetQueryResults"
+            ],
+            "Resource": [
+                "arn:aws:athena:AWS_REGION:AWS_ACCOUNT_NUMBER:workgroup/ATHENA_WORKGROUP"
+            ]
+        },
+        {
+            "Sid": "AthenaBucket",
+            "Effect": "Allow",
+            "Action": [
+                "s3:AbortMultipartUpload",
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:ListBucket",
+                "s3:ListMultipartUploadParts",
+                "s3:PutObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::ATHENA_WORKGROUP_BUCKET",
+                "arn:aws:s3:::ATHENA_WORKGROUP_BUCKET/ATHENA_WORKGROUP_PREFIX/*"
+            ]
+        },
+        {
+            "Sid": "ReadSourceBucket",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::SRC_BUCKET",
+                "arn:aws:s3:::SRC_BUCKET/SRC_PREFIX/*"
+            ]
+        },
+        {
+            "Sid": "WriteDestBucket",
+            "Effect": "Allow",
+            "Action": [
+                "s3:AbortMultipartUpload",
+                "s3:GetBucketLocation",
+                "s3:GetObject",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+                "s3:ListMultipartUploadParts",
+                "s3:PutObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::DST_BUCKET",
+                "arn:aws:s3:::DST_BUCKET/DST_PREFIX/*"
+            ]
+        },
+        {
+            "Sid": "Glue",
+            "Effect": "Allow",
+            "Action": [
+                "glue:CreateTable",
+                "glue:DeletePartition",
+                "glue:DeleteTable",
+                "glue:GetDatabase",
+                "glue:GetDatabases",
+                "glue:GetPartition",
+                "glue:GetPartitions",
+                "glue:GetTable",
+                "glue:GetTables"
+            ],
+            "Resource": [
+                "arn:aws:glue:AWS_REGION:AWS_ACCOUNT_NUMBER:catalog",
+                "arn:aws:glue:AWS_REGION:AWS_ACCOUNT_NUMBER:database/GLUE_DATABASE",
+                "arn:aws:glue:AWS_REGION:AWS_ACCOUNT_NUMBER:table/GLUE_DATABASE/*"
+            ]
+        }
+    ]
+}
