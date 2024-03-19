@@ -18,12 +18,12 @@ import os
 from datetime import datetime, timedelta, timezone
 
 
-s3_client = boto3.client('s3')
-
 src_bucket = os.environ['SRC_BUCKET']
-src_prefix = os.environ['SRC_PREFIX']
+src_prefix = os.environ['SRC_PREFIX'] + "AWSLogs/"
 dst_bucket = os.environ['DST_BUCKET']
 dst_prefix = os.environ['DST_PREFIX']
+
+s3_client = boto3.client('s3')
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
@@ -66,7 +66,7 @@ def retrieve_file_list(month, day, year):
 def retrieve_file_list_for_account_region_and_date(account_id, region, month, day, year):
     result = []
     prefix = f"{src_prefix}{account_id}/CloudTrail/{region}/{year:04d}/{month:02d}/{day:02d}/"
-    logger.debug(f"listing files for prefix {prefix}")
+    logger.debug(f"listing files for s3://{src_bucket}/{prefix}")
     req_args = {
         "Bucket": src_bucket,
         "Prefix": prefix
@@ -91,7 +91,7 @@ def retrieve_regions_for_account(account_id):
 def retrieve_child_prefixes(parent_prefix):
     """ Returns all child prefix components for a given parent prefix, sans trailing slashes.
         """
-    logger.debug(f"retrieving child prefixes for {parent_prefix}")
+    logger.debug(f"retrieving child prefixes for s3://{src_bucket}/{parent_prefix}")
     resp = s3_client.list_objects_v2(Bucket=src_bucket, Prefix=parent_prefix, Delimiter="/")
     result = []
     for prefix in [x['Prefix'] for x in resp.get('CommonPrefixes', [])]:
