@@ -23,11 +23,11 @@ ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
 STORED AS 
     INPUTFORMAT 'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat' 
     OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
-LOCATION 's3://BUCKET/BASE_PREFIX/'
+LOCATION 's3://MY_BUCKET/cloudtrail_monthly/'
 TBLPROPERTIES (
     'classification'            = 'parquet',
     'projection.enabled'        = 'true',
-    'storage.location.template' = 's3://BUCKET/BASE_PREFIX/${year}/${month}/',
+    'storage.location.template' = 's3://MY_BUCKET/cloudtrail_monthly/${year}/${month}/',
     'projection.year.type'      = 'integer',
     'projection.year.range'     = '2019,2029',
     'projection.year.digits'    = '4',

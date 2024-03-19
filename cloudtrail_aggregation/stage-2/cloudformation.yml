@@ -38,7 +38,7 @@ Parameters:
   SrcPrefix:
     Description:                        "Prefix for raw CloudTrail logs"
     Type:                               "String"
-    Default:                            "cloudtrail-daily/"
+    Default:                            "cloudtrail_daily/"
 
   DstBucket:
     Description:                        "Name of the bucket that will receive monthly logs"
@@ -47,7 +47,7 @@ Parameters:
   DstPrefix:
     Description:                        "Prefix for aggregated CloudTrail logs in the destination bucket (must include trailing slash)"
     Type:                               "String"
-    Default:                            "cloudtrail-monthly/"
+    Default:                            "cloudtrail_monthly/"
 
   RowsPerFile:
     Description:                        "The number of rows to store in a single output file"

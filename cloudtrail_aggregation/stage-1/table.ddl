@@ -61,11 +61,11 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
     'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://BUCKET/BASE_PREFIX/'
+LOCATION 's3://MY_BUCKET/cloudtrail_daily/'
 TBLPROPERTIES (
     'classification'            = 'cloudtrail',
     'projection.enabled'        = 'true',
-    'storage.location.template' = 's3://BUCKET/BASE_PREFIX/${year}/${month}/${day}/',
+    'storage.location.template' = 's3://MY_BUCKET/cloudtrail_daily/${year}/${month}/${day}/',
     'projection.year.type'      = 'integer',
     'projection.year.range'     = '2013,2038',
     'projection.year.digits'    = '4',

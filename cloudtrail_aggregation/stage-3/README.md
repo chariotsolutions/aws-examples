@@ -16,15 +16,15 @@ Glue data catalog.
 
 The file [table.ddl](table.ddl) contains the DDL to create this table. You must edit
 this file before use, raplacing `MY_BUCKET` with your actual S3 bucket (you may also
-change the table name, which is also used as the bucket prefix) from `cloudtrail_athena`
-to something else. After editing, use the Athena Console to create the table.
+change the table name, which is also used as the bucket prefix from `cloudtrail_athena`
+to something else). After editing, use the Athena Console to create the table.
 
 You'll note that this table definition does not contain struct fields or arrays, unlike
 the AWS-provided DDL for accessing raw CloudTrail data. Instead, these fields are turned
 into stringified JSON, and must be parsed for use.
 
 
-## Creating the Partition
+## Creating a Partition
 
 Each monthly partition in the long-lived table is created using a separate Athena query.
 The specific steps are:

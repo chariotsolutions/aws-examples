@@ -1,5 +1,6 @@
 -- replace MY_BUCKET by your actual bucket name
 -- replace MONTH and YEAR by the actual month and year that you want to transform
+-- if you don't like the name "cloudtrail_athena" or want to use a different prefix, feel free to change that too
 -- remember to drop this table once you've verified the transformed data
 
 CREATE TABLE cloudtrail_athena_temp_YEAR_MONTH

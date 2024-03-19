@@ -123,5 +123,6 @@ done.
 ## Creating an Athena table
 
 The file [table.ddl](table.ddl) contains DDL for the monthly aggregation table. Edit
-this file, replacing `BUCKET` and `BASE_PREFIX` with the actual values for your data
-(eg, `cloudtrail-monthly`), then paste into an Athena query window.
+this file, replacing `MY_BUCKET` with your actual bucket name, then paste into an
+Athena query window (you may also also replace `cloudtrail_monthly` with your preferred
+prefix).

@@ -1,4 +1,5 @@
 -- replace MY_BUCKET by your actual bucket name
+-- if you don't like the name "cloudtrail_athena" or want to use a different prefix, feel free to change that too
 -- if you decide to change the name of the table, you will also need to change the S3 location and location template
 
 CREATE EXTERNAL TABLE cloudtrail_athena (

@@ -48,7 +48,7 @@ Parameters:
   SrcPrefix:
     Description:                        "Prefix for source table's data; must include trailing slash"
     Type:                               "String"
-    Default:                            "cloudtrail-daily/"
+    Default:                            "cloudtrail_daily/"
     
   DstTableName:
     Description:                        "Name of the long-lived destination table"
@@ -62,7 +62,7 @@ Parameters:
   DstPrefix:
     Description:                        "Prefix for the destination table's data; must include trailing slash"
     Type:                               "String"
-    Default:                            "cloudtrail-athena/"
+    Default:                            "cloudtrail_athena/"
 
 
 Resources:
