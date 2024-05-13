@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Lambda webservice to interact with DynamoDB"
+
+Parameters:
+
+  TableName:
+    Description:                        "Name of the DynamoDB table"
+    Type:                               "String"
+    Default:                            "lambda_four_ways"
+
+  LambdaName:
+    Description:                        "Name of the Lambda and related resources"
+    Type:                               "String"
+    Default:                            "LambdaFourWays"
+
+  Runtime:
+    Description:                        "The Lambda runtime (implmentation language)"
+    Type:                               "String"
+    AllowedValues:                      [ "java21", "nodejs20.x", "provided.al2023", "python3.12" ]
+
+  Memory:
+    Description:                        "The amount of memory (in MB) to give to the Lambda"
+    Type:                               "Number"
+    Default:                            1024
+
+  DeploymentBucket:
+    Description:                        "Name of an S3 bucket that holds the deployment bundle"
+    Type:                               "String"
+
+  DeploymentKey:
+    Description:                        "The key for the deployment bundle"
+    Type:                               "String"
+
+
+Mappings:
+
+  LambdaConfig:
+    "java21":                           { "Entrypoint": "com.chariotsolutions.example.DynamoLambda::handleRequest" }
+    "nodejs20.x":                       { "Entrypoint": "lambda.handler" }
+    "provided.al2023":                  { "Entrypoint": "main" }
+    "python3.12":                       { "Entrypoint": "lambda.handler" }
+
+
+Resources:
+
+##
+## DynamoDB
+##
+
+  DynamoTable:
+    Type:                               "AWS::DynamoDB::Table"
+    Properties:
+      TableName:                        !Ref TableName
+      AttributeDefinitions: 
+        - AttributeName:                "id"
+          AttributeType:                "S"
+      KeySchema: 
+        - AttributeName:                "id"
+          KeyType:                      "HASH"
+      TableClass:                       "STANDARD"
+      BillingMode:                      "PROVISIONED"
+      ProvisionedThroughput: 
+        ReadCapacityUnits:              5
+        WriteCapacityUnits:             5
+
+
+##
+## Lambda
+##
+
+  LambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  LambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-ExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName:                   "OperationalPolicy"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Sid:                      "DynamoDb"
+                Effect:                   "Allow"
+                Action:                   
+                  -                       "dynamodb:GetItem"
+                  -                       "dynamodb:PutItem"
+                Resource:                 
+                  -                       !GetAtt DynamoTable.Arn
+
+
+  LambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties: 
+      FunctionName:                     !Sub "${AWS::StackName}"
+      Description:                      "A function to list buckets, implemented in Go"
+      Role:                             !GetAtt LambdaRole.Arn
+      Runtime:                          !Ref Runtime
+      Handler:                          !FindInMap [LambdaConfig, !Ref Runtime, Entrypoint]
+      MemorySize:                       !Ref Memory
+      Timeout:                          30
+      Code:
+        S3Bucket:                       !Ref DeploymentBucket
+        S3Key:                          !Ref DeploymentKey
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME:            !Ref DynamoTable
+
+
+  InvocationPermission:
+    Type:                               "AWS::Lambda::Permission"
+    DependsOn:                          [ LambdaFunction, APIGateway ]
+    Properties:
+      Action:                           "lambda:InvokeFunction"
+      FunctionName:                     !Ref LambdaFunction
+      Principal:                        "apigateway.amazonaws.com"
+      SourceArn:                        !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*"
+
+##
+## API Gateway
+##
+
+  APIGateway:
+    Type:                               "AWS::ApiGatewayV2::Api"
+    Properties: 
+      Name:                             !Sub "${AWS::StackName}"
+      Description:                      "Invokes the bucket-listing Lambda"
+      ProtocolType:                     "HTTP"
+
+
+  APIGatewayGetRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "GET /{id}"
+      Target:                           !Sub "integrations/${APIGatewayLambdaIntegration}"
+
+
+  APIGatewayPutRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "PUT /{id}"
+      Target:                           !Sub "integrations/${APIGatewayLambdaIntegration}"
+
+
+  APIGatewayPostRoute:
+    Type:                               "AWS::ApiGatewayV2::Route"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      RouteKey:                         "POST /"
+      Target:                           !Sub "integrations/${APIGatewayLambdaIntegration}"
+
+
+  APIGatewayLambdaIntegration:
+    Type:                               "AWS::ApiGatewayV2::Integration"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      Description:                      "Handles all requests for API operations"
+      IntegrationMethod:                "POST"
+      IntegrationType:                  "AWS_PROXY"
+      IntegrationUri:                   !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations"
+      PayloadFormatVersion:             "1.0"
+
+
+  APIGatewayDefaultStage:
+    Type:                               "AWS::ApiGatewayV2::Stage"
+    Properties: 
+      ApiId:                            !Ref APIGateway
+      StageName:                        "$default"
+      Description:                      "Default auto-deployed stage"
+      AutoDeploy:                       true
+      AccessLogSettings: 
+        DestinationArn:                 !GetAtt APIGatewayAccessLog.Arn
+        Format:                         !Join 
+          -                             " "
+          - -                           '{'
+            -                           '"requestId": "$context.requestId",'
+            -                           '"ip": "$context.identity.sourceIp",'
+            -                           '"requestTime": "$context.requestTime",'
+            -                           '"httpMethod": "$context.httpMethod",'
+            -                           '"path": "$context.path",'
+            -                           '"routeKey": "$context.routeKey",'
+            -                           '"status": "$context.status",'
+            -                           '"protocol": "$context.protocol",'
+            -                           '"responseLength": "$context.responseLength",'
+            -                           '"context.integration.error": "$context.integration.error",'
+            -                           '"context.integration.status": "$context.integration.status"'
+            -                           "}"
+
+
+  APIGatewayAccessLog:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/apigateway/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+Outputs:
+
+  APIGatewayUrl:
+    Description:                        "The root URL for the example"
+    Value:                              !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/"
