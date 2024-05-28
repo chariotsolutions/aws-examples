@@ -5,8 +5,8 @@ description = "Transforms CloudTrail event logs that are stored on S3 and upload
 authors = ["Keith Gregory <kgregory@chariotsolutions.com>"]
 
 [tool.poetry.dependencies]
-python              = "^3.7"
-requests            = "~2.31.0"
+python              = "^3.9"
+requests            = "~2.32.0"
 aws-requests-auth   = "~0.4.3"
 
 [tool.poetry.dev-dependencies]
