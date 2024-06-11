@@ -1,0 +1,375 @@
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Example of WebSocket->Kinesis data transfer"
+
+Parameters:
+
+  VpcId:
+    Description:                        "VPC where the example will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  SubnetIds:
+    Description:                        "Subnets where the example will be deployed; must have NAT if private"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+  CloudMapNamespaceName:
+    Description:                        "The namespace for CloudMap service discovery (which creates a local zone with this name)"
+    Type:                               "String"
+    Default:                            "ws2k"
+
+  ServerHostName:
+    Description:                        "Name for the server in the image registry"
+    Type:                               "String"
+    Default:                            "server"
+
+  ServerImageName:
+    Description:                        "Name that will be used for the server's ECR repository name / image name"
+    Type:                               "String"
+    Default:                            "ws2k_server"
+
+  ServerImageTag:
+    Description:                        "Version tag of the server's Docker image"
+    Type:                               "String"
+    Default:                            "latest"
+
+  ServerPort:
+    Description:                        "The port where the server will listen for web-socket requests"
+    Type:                               "String"
+    Default:                            "8000"
+
+  ServerSendCount:
+    Description:                        "The number of messages that the server sends per connection"
+    Type:                               "String"
+    Default:                            "60"
+
+  ServerSendSleep:
+    Description:                        "Fractional number of seconds that the server sleeps between messages"
+    Type:                               "String"
+    Default:                            "1"
+
+  ClientImageName:
+    Description:                        "Name that will be used for the client's ECR repository name / image name"
+    Type:                               "String"
+    Default:                            "ws2k_client"
+
+  ClientImageTag:
+    Description:                        "Version tag of the client's Docker image"
+    Type:                               "String"
+    Default:                            "latest"
+
+  EnableServer:
+    Description:                        "Change to true to enable Server service after images uploaded to ECR"
+    Type:                               "String"
+    AllowedValues:                      [ "true", "false" ]
+    Default:                            "false"
+
+  EnableClient:
+    Description:                        "Change to true to enable Client service after images uploaded to ECR"
+    Type:                               "String"
+    AllowedValues:                      [ "true", "false" ]
+    Default:                            "false"
+
+  AssignPublicIPs:
+    Description:                        "Set to true to use a public IP for the services (required if no NAT)"
+    Type:                               "String"
+    AllowedValues:                      [ "true", "false" ]
+    Default:                            "false"
+
+
+Conditions:
+
+  CreateServer:                         !Equals [ !Ref EnableServer, "true" ]
+  CreateClient:                         !Equals [ !Ref EnableClient, "true" ]
+  AssignPublicIPsBool:                  !Equals [ !Ref AssignPublicIPs, "true" ]
+
+
+Resources:
+
+##
+## Common / Infrastructure
+##
+
+  CloudMapNamespace:
+    Type:                               "AWS::ServiceDiscovery::PrivateDnsNamespace"
+    Properties:
+      Name:                             !Ref CloudMapNamespaceName
+      Description:                      !Sub "Namespace for WebSocket->Kinesis example; managed by CloudFormation stack ${AWS::StackName}"
+      Vpc:                              !Ref VpcId
+
+
+  KinesisStream:
+    Type:                               "AWS::Kinesis::Stream"
+    Properties:
+      Name:                             !Ref AWS::StackName
+      ShardCount:                       1
+
+
+  SharedSecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "${AWS::StackName}-SharedSecurityGroup"
+      GroupDescription:                 "Allows communication between client and server"
+      VpcId:                            !Ref VpcId
+
+
+  SharedSecurityGroupSelfIngress:
+    Type:                               "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId:                          !GetAtt SharedSecurityGroup.GroupId
+      Description:                      "self"
+      IpProtocol:                       "tcp"
+      FromPort:                         0
+      ToPort:                           65535
+      SourceSecurityGroupId:            !GetAtt SharedSecurityGroup.GroupId
+
+
+  ECSCluster:
+    Type:                               "AWS::ECS::Cluster"
+    Properties:
+      ClusterName:                      !Sub "${AWS::StackName}"
+
+
+  TaskExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-TaskExecutionRole-${AWS::Region}"
+      Path:                             "/ecs/"
+      ManagedPolicyArns:
+        -                               "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["ecs-tasks.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      # ManagedPolicyArns:              []
+      # Policies:
+
+
+###
+### Server Task
+###
+
+  ServerRepository:
+    Type:                               "AWS::ECR::Repository"
+    Properties:
+      RepositoryName:                   !Ref ServerImageName
+      EmptyOnDelete:                    true
+      ImageTagMutability:               "MUTABLE"
+      ImageScanningConfiguration:
+        ScanOnPush:                     true
+      LifecyclePolicy:
+        LifecyclePolicyText:            |
+                                        {
+                                            "rules": [
+                                                {
+                                                    "rulePriority":   1,
+                                                    "description":    "Expire old untagged images",
+                                                    "selection": {
+                                                        "tagStatus":  "untagged",
+                                                        "countType":  "sinceImagePushed",
+                                                        "countUnit":  "days",
+                                                        "countNumber": 3
+                                                    },
+                                                    "action": {
+                                                        "type": "expire"
+                                                    }
+                                                }
+                                            ]
+                                        }
+
+
+  ServerLogDestination:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/ecs/${AWS::StackName}-Server"
+      RetentionInDays:                  7
+
+
+  ServerTaskRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-Server-${AWS::Region}"
+      Path:                             "/ecs/"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["ecs-tasks.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+
+
+  ServerTaskDefinition:
+    Type:                               "AWS::ECS::TaskDefinition"
+    Properties:
+      Family:                           !Sub "${AWS::StackName}-Server"
+      RequiresCompatibilities:          [ "FARGATE" ]
+      NetworkMode:                      "awsvpc"
+      Cpu:                              512
+      Memory:                           1024
+      ExecutionRoleArn:                 !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn:                      !GetAtt ServerTaskRole.Arn
+      ContainerDefinitions:
+        - Name:                         "main"
+          Image:                        !Sub "${ServerRepository.RepositoryUri}:${ServerImageTag}"
+          Essential:                    true
+          LogConfiguration:
+            LogDriver:                  "awslogs"
+            Options:
+              awslogs-region:           !Ref AWS::Region
+              awslogs-group:            !Ref ServerLogDestination
+              awslogs-stream-prefix:    "main"
+          PortMappings:
+            - ContainerPort:            80
+          Environment:
+            - Name:                     "LISTEN_PORT"
+              Value:                    !Ref ServerPort
+            - Name:                     "SEND_COUNT"
+              Value:                    !Ref ServerSendCount
+            - Name:                     "SEND_SLEEP"
+              Value:                    !Ref ServerSendSleep
+
+
+  ServerService:
+    Type:                               "AWS::ECS::Service"
+    Condition:                          "CreateServer"
+    Properties:
+      ServiceName:                      !Sub "${AWS::StackName}-Server"
+      TaskDefinition:                   !Ref ServerTaskDefinition
+      LaunchType:                       "FARGATE"
+      Cluster:                          !GetAtt ECSCluster.Arn
+      DesiredCount:                     !If [ CreateServer, 1, 0 ]
+      SchedulingStrategy:               "REPLICA"
+      DeploymentConfiguration:
+        MaximumPercent:                 200
+        MinimumHealthyPercent:          100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp:               !If [ AssignPublicIPsBool, "ENABLED", "DISABLED" ]
+          SecurityGroups:               [ !Ref SharedSecurityGroup ]
+          Subnets:                      !Ref SubnetIds
+      ServiceRegistries:
+        - RegistryArn:                  !GetAtt ServerCloudMapEntry.Arn
+
+
+  ServerCloudMapEntry:
+    Type:                               "AWS::ServiceDiscovery::Service"
+    Condition:                          "CreateServer"
+    Properties:
+      Name:                             !Ref ServerHostName
+      Description:                      !Sub "Server created by CloudFormation stack ${AWS::StackName}"
+      DnsConfig:
+        NamespaceId:                    !GetAtt CloudMapNamespace.Id
+        DnsRecords:
+          - Type:                       "A"
+            TTL:                        15
+
+
+###
+### Client Task
+###
+
+  ClientRepository:
+    Type:                               "AWS::ECR::Repository"
+    Properties:
+      RepositoryName:                   !Ref ClientImageName
+      EmptyOnDelete:                    true
+      ImageTagMutability:               "MUTABLE"
+      ImageScanningConfiguration:
+        ScanOnPush:                     true
+      LifecyclePolicy:
+        LifecyclePolicyText:            |
+                                        {
+                                            "rules": [
+                                                {
+                                                    "rulePriority":   1,
+                                                    "description":    "Expire old untagged images",
+                                                    "selection": {
+                                                        "tagStatus":  "untagged",
+                                                        "countType":  "sinceImagePushed",
+                                                        "countUnit":  "days",
+                                                        "countNumber": 3
+                                                    },
+                                                    "action": {
+                                                        "type": "expire"
+                                                    }
+                                                }
+                                            ]
+                                        }
+
+
+  ClientLogDestination:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/ecs/${AWS::StackName}-Client"
+      RetentionInDays:                  7
+
+
+  ClientTaskRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-Client-${AWS::Region}"
+      Path:                             "/ecs/"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["ecs-tasks.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      Policies:
+        - PolicyName:                   "OperationalPolicy"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              -
+                Effect:                 "Allow"
+                Action:
+                  -                     "kinesis:PutRecord"
+                Resource:               !GetAtt KinesisStream.Arn
+
+
+  ClientTaskDefinition:
+    Type:                               "AWS::ECS::TaskDefinition"
+    Properties:
+      Family:                           !Sub "${AWS::StackName}-Client"
+      RequiresCompatibilities:          [ "FARGATE" ]
+      NetworkMode:                      "awsvpc"
+      Cpu:                              512
+      Memory:                           1024
+      ExecutionRoleArn:                 !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn:                      !GetAtt ClientTaskRole.Arn
+      ContainerDefinitions:
+        - Name:                         "main"
+          Image:                        !Sub "${ClientRepository.RepositoryUri}:${ClientImageTag}"
+          Essential:                    true
+          LogConfiguration:
+            LogDriver:                  "awslogs"
+            Options:
+              awslogs-region:           !Ref AWS::Region
+              awslogs-group:            !Ref ClientLogDestination
+              awslogs-stream-prefix:    "main"
+          Environment:
+            - Name:                     "SERVER_URL"
+              Value:                    !Sub "ws://${ServerHostName}.${CloudMapNamespaceName}:${ServerPort}"
+            - Name:                     "STREAM_NAME"
+              Value:                    !Ref KinesisStream
+
+
+  ClientService:
+    Type:                               "AWS::ECS::Service"
+    Condition:                          "CreateClient"
+    DependsOn:                          [ ServerService ]
+    Properties:
+      ServiceName:                      !Sub "${AWS::StackName}-Client"
+      TaskDefinition:                   !Ref ClientTaskDefinition
+      LaunchType:                       "FARGATE"
+      Cluster:                          !GetAtt ECSCluster.Arn
+      DesiredCount:                     !If [ CreateClient, 1, 0 ]
+      SchedulingStrategy:               "REPLICA"
+      DeploymentConfiguration:
+        MaximumPercent:                 200
+        MinimumHealthyPercent:          100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp:               !If [ AssignPublicIPsBool, "ENABLED", "DISABLED" ]
+          SecurityGroups:               [ !Ref SharedSecurityGroup ]
+          Subnets:                      !Ref SubnetIds

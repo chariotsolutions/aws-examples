@@ -1,0 +1,7 @@
+FROM python:3.12
+
+RUN pip install boto3 websockets
+
+COPY client.py /app/
+
+CMD [ "python", "/app/client.py" ]

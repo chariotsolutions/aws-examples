@@ -1,0 +1,7 @@
+FROM python:3.12
+
+RUN pip install websockets
+
+COPY server.py /app/
+
+CMD [ "python", "/app/server.py" ]
