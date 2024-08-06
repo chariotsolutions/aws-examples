@@ -19,17 +19,20 @@
     """
 
 
+import json
 import cloudtrail_to_elasticsearch.processor
 
 px = cloudtrail_to_elasticsearch.processor.create()
 
 def handle(event, context):
-    for record in event.get('Records', []):
-        eventName = record['eventName']
-        bucket = record['s3']['bucket']['name']
-        key = record['s3']['object']['key']
-        try:
-            print(f"processing s3://{bucket}/{key}")
-            px.process_from_s3(bucket, key)
-        except Exception as ex:
-            print(f"failed to process file: {ex}")
+    for wrapper_record in event.get('Records', []):
+        message = json.loads(wrapper_record['body'])
+        for record in message.get('Records', []):
+            eventName = record['eventName']
+            bucket = record['s3']['bucket']['name']
+            key = record['s3']['object']['key']
+            try:
+                print(f"processing s3://{bucket}/{key}")
+                px.process_from_s3(bucket, key)
+            except Exception as ex:
+                print(f"failed to process file: {ex}")

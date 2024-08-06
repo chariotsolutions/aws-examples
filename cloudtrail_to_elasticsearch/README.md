@@ -63,8 +63,8 @@ Deploying is a multi-step process:
 1. **Enable CloudTrail**
 
    For this example, I'm going to assume that you already have CloudTrail enabled,
-   and an S3 bucket configured to accept its output; if not, 
-   [go here](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html).
+   and an S3 bucket configured to accept its output. If not, go
+   [here](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html).
    While it would simplify the example if my CloudFormation script created the trail
    and bucket, it would put me in the position of either delivering an insecure and
    incomplete solution, or one that could not easily be torn down.
@@ -75,14 +75,14 @@ Deploying is a multi-step process:
 
    * Use server-side encryption on this bucket.
 
-   * Enable [Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
+   * Enable [Compliance Mode Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
      on that bucket, to ensure that an intruder can't delete the events that show their activity.
-     When you turn on object lock, you need to pick a retention mode and period. I recommend 90
-     days for the retention period, and "compliance" mode for the retention type.
+     When you turn on object lock, you need to pick a default retention period. I recommend 90
+     90 days.
 
      **Beware:** compliance mode means that you _can not delete the object_ until the retention
      period expires. This is good from a security perspective, but bad from a cost perspective
-     if you pick an over-long period.
+     if you pick an over-long period. 
 
    * Create a cross-region trail. By default, CloudTrail only records events from the _current_ region.
      You want to capture _all_ of the events for your account.
@@ -158,16 +158,18 @@ Deploying is a multi-step process:
 
    CloudFormation requires you to configure bucket notifications at the time you create the bucket.
    Since this post is about uploading CloudTrail events to OpenSearch, and not about configuring
-   CloudTrail, I'm leaving this as a manual step:
+   CloudTrail, I'm leaving this as a manual step.
 
-   1. Open the Lambda function in the Console. 
-   2. Click the "Add trigger" button. 
-   3. Select S3 as the trigger type. 
-   4. Leave the event type as "All object create events".
-   5. Pick the bucket that you configured with CloudTrail, and enter the log prefix (if any).
-   6. Click the checkbox that says you understand that writing back to the bucket from Lambda
-      is a Bad Idea (this Lambda doesn't do it).
-   7. Click "Add"
+   Start by selecting the bucket in the Console, go to the "Properties" tab, scroll down to
+   "Event notifications", and click the "Create event notification" button. Then configure
+   as follos:
+
+   * _Event name_: up to you; choose something like `New_File_SQS_Notification`
+   * _Prefix_: `AWSLogs/`
+   * _Suffix_: leave this blank
+   * _Event types_: select "All object create events"
+   * _Destination_: select "SQS queue", and either select the "Notifications" queue or paste
+     the ARN from the CloudFormation output
 
    Within a few minutes, you should be able to go to the OpenSearch cluster and see a new
    index named "cloudtrail-YYYY-MM" (where YYYY-MM is the current year and month). You can then
@@ -217,6 +219,7 @@ to trigger the Lambda).
 From within the project directory:
 
 1. Install all of the dependencies. You can use either of the Makefiles to do this.
+   I recommend first creating a virtual environment.
 
 2. Set the necessary environment variables:
 
@@ -248,8 +251,11 @@ From within the project directory:
     already in OpenSearch. If you don't specify this parameter, the program will load
     all events in your bucket -- which may take quite some time.
 
-    The `--s3` option tells the program to read from an S3 bucket and prefix; replace the
-    values shown here with those for your installation. 
+    The `--s3` option tells the program to read from an S3 bucket and prefix. To avoid
+    reading lots of directory entries from S3, the prefix should be as specific as
+    possible. For example, `AWSLogs/o-7e8xfub22q/123456789012/CloudTrail/us-east-1/2022/04/`
+    rather than just `AWSLogs/`. If you have a lot of accounts and/or regions, you'll find
+    it much easier to store the list of prefixes in a file and loop over them in the shell.
 
     If you've downloaded events, you can instead use the option `--local` with the path of
     your download directory, and the program will read event files from there.
@@ -471,10 +477,15 @@ and then switches the DNS entry. The old server will continue to accept updates 
 to the point that it shuts down. Unfortunately, those updates will not find their way to
 the new server.
 
-To avoid losing events, record the start time of your server upgrade, and the timestamp
-when a new Lambda instance is spun up after the upgrade completes. Then look for all of
-the "processing" log entries between those two times (easy with CloudWatch Logs Insights),
-and use bulk upload to re-process the files.
+To avoid losing events, disable the SQS trigger on the Lambda _before_ updating the cluster,
+and re-enable it when the upgrade is complete. The Lambda will work its way through the
+queue of outstanding events.
+
+**Note**: the notification queue uses the default retention period of four days. A cluster
+upgrade should complete in well under this time, but it takes long enough that you might
+forget to re-enable the trigger. Once the events are lost from the queue, you'll need to
+run a bulk upload as described above.
+
 
 ## If you change the instance type
 

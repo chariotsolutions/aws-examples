@@ -69,9 +69,6 @@ arg_parser.add_argument("--s3",
                         metavar=("BUCKET", "PREFIX"),
                         dest='s3_config',
                         help="""Destination on S3 where CloudTrail files are located, with optional prefix.
-                                Can restrict the files that are processed by providing start and end dates,
-                                formatted "YYYY-MM-DD"; use dummy values (eg, "9999-12-31") to bound on one
-                                side only.
                                 """)
 args = arg_parser.parse_args()
 

@@ -55,7 +55,7 @@ Resources:
       EnableVersionUpgrade:             true
     Properties:
       DomainName:                       !Ref OpenSearchDomainName
-      EngineVersion:                    "OpenSearch_2.5"
+      EngineVersion:                    "OpenSearch_2.13"
       ClusterConfig:
         InstanceType:                   !Ref OpenSearchInstanceType
         InstanceCount:                  1
@@ -86,6 +86,42 @@ Resources:
                 aws:SourceIp:           !Ref AllowedIPs
 
   ##
+  ## SQS Queues
+  ##
+
+  NotificationQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties:
+      QueueName:                        !Sub "${LambdaName}-Notifications"
+      VisibilityTimeout:                3600    # one hour, a multiple of max Lambda execution time
+      RedrivePolicy: 
+        maxReceiveCount:                8       # this should be enough to cover cluster upgrades
+        deadLetterTargetArn:            !GetAtt DeadLetterQueue.Arn
+
+
+  NotificationQueuePolicy:
+    Type:                               "AWS::SQS::QueuePolicy"
+    Properties:
+      Queues: 
+        -                               !Ref NotificationQueue
+      PolicyDocument: 
+        Version:                        "2012-10-17"
+        Statement: 
+          - Effect:                     "Allow"
+            Action:                     "sqs:SendMessage" 
+            Resource:                   !GetAtt NotificationQueue.Arn
+            Principal:  
+              Service:                  [ "s3.amazonaws.com" ]
+
+
+  DeadLetterQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties:
+      QueueName:                        !Sub "${LambdaName}-DLQ"
+      MessageRetentionPeriod:           1209600  # two weeks (maximum allowed)
+
+
+  ##
   ## Lambda Function
   ##
 
@@ -111,7 +147,17 @@ Resources:
       ManagedPolicyArns:
         -                               "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
-        - PolicyName:                   "ReadFromSource"
+        - PolicyName:                   "ReadFromSQS"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement: 
+              - Effect:                 "Allow"
+                Action:
+                  -                     "sqs:ReceiveMessage"
+                  -                     "sqs:DeleteMessage"
+                  -                     "sqs:GetQueueAttributes"
+                Resource:               !GetAtt NotificationQueue.Arn
+        - PolicyName:                   "ReadFromLogBucket"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
@@ -134,7 +180,7 @@ Resources:
       FunctionName:                     !Ref LambdaName
       Description:                      "Reacts to CloudTrail files being stored on S3 by uploading them to OpenSearch"
       Role:                             !GetAtt LambdaRole.Arn
-      Runtime:                          "python3.9"
+      Runtime:                          "python3.12"
       Handler:                          "cloudtrail_to_elasticsearch.lambda_handler.handle"
       Code: 
         ZipFile:                        "# this is an invalid file, used as a placeholder in the CloudFormation script"
@@ -145,7 +191,22 @@ Resources:
           ES_HOSTNAME:                  !GetAtt OpenSearchDomain.DomainEndpoint
 
 
+  LambdaTrigger:
+    Type:                               "AWS::Lambda::EventSourceMapping"
+    Properties:
+      EventSourceArn:                   !GetAtt NotificationQueue.Arn
+      FunctionName:                     !GetAtt LambdaFunction.Arn
+      BatchSize:                        10
+      MaximumBatchingWindowInSeconds:   90
+      ScalingConfig: 
+        MaximumConcurrency:             2
+
+
 Outputs:
+
+  NotificationQueueArn:
+    Description:                        "The ARN of the notification queue (to create bucket notification)"
+    Value:                              !GetAtt NotificationQueue.Arn
 
   OpenSearchArn:
     Description:                        "The ARN of the OpenSearch cluster"
