@@ -138,10 +138,15 @@ def index_name(key):
 
 def transform_events(events):
     for event in events:
+        flatten(event, 'addendum')
+        flatten(event, 'additionalEventData')
+        flatten(event, 'edgeDeviceDetails')
+        flatten(event, 'insightDetails')
         flatten(event, 'requestParameters')
         flatten(event, 'responseElements')
         flatten(event, 'resources')
         flatten(event, 'serviceEventDetails')
+        flatten(event, 'tlsDetails')
     return events
 
 
