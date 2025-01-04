@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 
 src_bucket = os.environ['SRC_BUCKET']
-src_prefix = os.environ['SRC_PREFIX'] + "AWSLogs/"
+src_prefix = os.environ['SRC_PREFIX']
 dst_bucket = os.environ['DST_BUCKET']
 dst_prefix = os.environ['DST_PREFIX']
 
