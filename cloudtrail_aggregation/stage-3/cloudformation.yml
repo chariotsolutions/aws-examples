@@ -67,6 +67,24 @@ Parameters:
 
 Resources:
 
+  TriggerQueue:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-trigger"
+      MessageRetentionPeriod:           1209600
+      VisibilityTimeout:                1200  # 20 minutes; will redrive if Lambda times out
+      RedrivePolicy: 
+        deadLetterTargetArn:            !GetAtt TriggerDLQ.Arn
+        maxReceiveCount:                1
+
+
+  TriggerDLQ:
+    Type:                               "AWS::SQS::Queue"
+    Properties: 
+      QueueName:                        !Sub "${LambdaName}-dlq"
+      MessageRetentionPeriod:           1209600
+
+
   LambdaLogGroup:
     Type:                               "AWS::Logs::LogGroup"
     DeletionPolicy:                     "Delete"
@@ -186,24 +204,6 @@ Resources:
           DST_TABLE_NAME:               !Ref DstTableName
           DST_BUCKET:                   !Ref DstBucket
           DST_PREFIX:                   !Ref DstPrefix
-
-
-  TriggerQueue:
-    Type:                               "AWS::SQS::Queue"
-    Properties: 
-      QueueName:                        !Sub "${LambdaName}-trigger"
-      MessageRetentionPeriod:           1209600
-      VisibilityTimeout:                1200  # 20 minutes; will redrive if Lambda times out
-      RedrivePolicy: 
-        deadLetterTargetArn:            !GetAtt TriggerDLQ.Arn
-        maxReceiveCount:                1
-
-
-  TriggerDLQ:
-    Type:                               "AWS::SQS::Queue"
-    Properties: 
-      QueueName:                        !Sub "${LambdaName}-dlq"
-      MessageRetentionPeriod:           1209600
 
 
   Trigger:

@@ -113,9 +113,17 @@ in the templates, but which can normally be left as defaults.
 
 ## Triggering the Lambda
 
-Unlike the "stage 1" Lambda, this example does not include an EventBridge Scheduler rule.
-The reason is that you might want to aggregate at the start of each month, or every day
-once the daily Lambda has run. In the latter case, while you could implement a scheduler
+This Lambda is triggered with a JSON payload that contains the fields `month` and `year`.
+Unlike stage-1, there's no program to put events on the queue. Instead, use the AWS CLI:
+
+```
+aws sqs send-message --queue-url QUEUE_URL --message-body '{"year": 2024, "month": 1}'
+```
+
+
+Also unlike the "stage 1" Lambda, this example does not include an EventBridge Scheduler
+rule. The reason is that you might want to aggregate at the start of each month, or every
+day once the daily Lambda has run. In the latter case, while you could implement a scheduler
 rule, I think it would be better if the stage-1 Lambda published an event when it was
 done.
 
