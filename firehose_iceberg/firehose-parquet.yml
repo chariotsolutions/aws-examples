@@ -1,0 +1,237 @@
+##
+## Creates a Kinesis Firehose that accepts CloudTrail events from Kinesis and writes them
+## as Parquet files on S3, along with a Glue table to access them.
+##
+## The Firehose and related resources will be naamed after the stack.
+##
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Kinesis Firehose to Parquet table"
+
+Parameters:
+
+  KinesisStreamName:
+    Description:                        "Name of the Kinesis stream containing CloudTrail events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  S3Bucket:
+    Description:                        "The bucket where data files will be written"
+    Type:                               "String"
+
+  GlueDatabaseName:
+    Description:                        "Name of the Glue database to holds the table defined by this template"
+    Type:                               "String"
+    Default:                            "default"
+
+  GlueTableName:
+    Description:                        "Name of the Glue table that will represent these events (also the prefix for data storage)"
+    Type:                               "String"
+
+  FirehoseErrorPrefix:
+    Description:                        "Prefix (in destination bucket) where error records wiill be written; must include trailing slash"
+    Type:                               "String"
+    Default:                            "firehose-errors/"
+
+  FirehoseBufferingInterval:
+    Description:                        "Number of seconds that Firehose will wait to gather ingested records"
+    Type:                               "Number"
+    MinValue:                           60
+    MaxValue:                           900
+    Default:                            900
+
+  FirehoseFilesizeMB:
+    Description:                        "Target number of megabytes that Firehose will store in a single file"
+    Type:                               "Number"
+    MinValue:                           1
+    MaxValue:                           128
+    Default:                            64
+
+
+Resources:
+
+  ## Glue
+
+  GlueTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabaseName
+      TableInput: 
+        Name:                           !Ref GlueTableName
+        Description:                    "CloudTrail events with stringified nested objects"
+        PartitionKeys:                  []
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueTableName}/"
+          InputFormat:                  "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+          OutputFormat:                 "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+          SerdeInfo: 
+            SerializationLibrary:       "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "awsregion"
+              Type:                     "string"
+            - Name:                     "eventcategory"
+              Type:                     "string"
+            - Name:                     "eventid"
+              Type:                     "string"
+            - Name:                     "eventname"
+              Type:                     "string"
+            - Name:                     "eventsource"
+              Type:                     "string"
+            - Name:                     "eventtime"
+              Type:                     "timestamp"
+            - Name:                     "eventtype"
+              Type:                     "string"
+            - Name:                     "eventversion"
+              Type:                     "string"
+            - Name:                     "managementevent"
+              Type:                     "boolean"
+            - Name:                     "readonly"
+              Type:                     "boolean"
+            - Name:                     "recipientaccountid"
+              Type:                     "string"
+            - Name:                     "requestid"
+              Type:                     "string"
+            - Name:                     "requestparameters"
+              Type:                     "string"
+            - Name:                     "resources"
+              Type:                     "string"
+            - Name:                     "responseelements"
+              Type:                     "string"
+            - Name:                     "sharedeventid"
+              Type:                     "string"
+            - Name:                     "sourceipaddress"
+              Type:                     "string"
+            - Name:                     "useragent"
+              Type:                     "string"
+            - Name:                     "useridentity"
+              Type:                     "string"
+
+
+  ## Firehose
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/aws/kinesisfirehose/${AWS::StackName}"
+      RetentionInDays:                  1
+
+
+  # create the log stream explicitly because otherwise Firehose Console shows an error
+  FirehoseS3LogStream:
+    Type:                               "AWS::Logs::LogStream"
+    Properties:
+      LogGroupName:                     !Ref FirehoseLogGroup
+      LogStreamName:                    "Destination_Errors"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:GetShardIterator"
+                -                       "kinesis:GetRecords"
+              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+        - PolicyName:                   "Destination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${FirehoseErrorPrefix}${GlueTableName}/*"
+        - PolicyName:                   "GlueCatalog"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "glue:GetTable"
+                -                       "glue:GetTableVersion"
+                -                       "glue:GetTableVersions"
+
+              Resource:
+                -                       "arn:aws:glue:us-east-1:810107213182:catalog"
+                -                       !Sub "arn:aws:glue:us-east-1:810107213182:database/${GlueDatabaseName}"
+                -                       !Sub "arn:aws:glue:us-east-1:810107213182:table/${GlueDatabaseName}/${GlueTableName}"
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+
+
+  Firehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Ref AWS::StackName
+      DeliveryStreamType:               "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        BucketARN:                      !Sub "arn:aws:s3:::${S3Bucket}"
+        Prefix:                         !Sub "${GlueTableName}/"
+        ErrorOutputPrefix:              !Sub "${FirehoseErrorPrefix}${GlueTableName}/"
+        CompressionFormat:              "UNCOMPRESSED"
+        BufferingHints:
+          IntervalInSeconds:            !Ref FirehoseBufferingInterval
+          SizeInMBs:                    !Ref FirehoseFilesizeMB
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                !Ref FirehoseS3LogStream
+        DataFormatConversionConfiguration:
+          Enabled:                      true
+          InputFormatConfiguration: 
+            Deserializer:
+              OpenXJsonSerDe:
+                CaseInsensitive:        true      # this is the default, but we need something for correct YAML
+          OutputFormatConfiguration: 
+            Serializer:
+              ParquetSerDe:
+                BlockSizeBytes:         67108864  # minimum; these files won't be large
+                Compression:            SNAPPY    # the default, but make it explicit
+          SchemaConfiguration: 
+            CatalogId:                  !Ref AWS::AccountId
+            DatabaseName:               !Ref GlueDatabaseName
+            TableName:                  !Ref GlueTableName
+            RoleARN:                    !GetAtt FirehoseRole.Arn
+            VersionId:                  "LATEST"

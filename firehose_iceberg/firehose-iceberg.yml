@@ -1,0 +1,417 @@
+##
+## Creates a Kinesis Firehose that accepts CloudTrail events from Kinesis and writes them
+## to an Iceberg table on S3, along with the Glue table used to access this data.
+##
+## The Firehose and related resources will be naamed after the stack.
+##
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Kinesis Firehose to Iceberg table"
+
+Parameters:
+
+  KinesisStreamName:
+    Description:                        "Name of the Kinesis stream containing CloudTrail events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  S3Bucket:
+    Description:                        "The bucket where data files will be written"
+    Type:                               "String"
+
+  GlueDatabaseName:
+    Description:                        "Name of the Glue database to holds the table defined by this template"
+    Type:                               "String"
+    Default:                            "default"
+
+  GlueTableName:
+    Description:                        "Name of the Glue table that will represent these events (also the prefix for data storage)"
+    Type:                               "String"
+
+  GluePrimaryKey:
+    Description:                        "Name of the primary key field"
+    Type:                               "String"
+    Default:                            "eventid"
+
+  FirehoseErrorPrefix:
+    Description:                        "Prefix (in destination bucket) where error records wiill be written; must include trailing slash"
+    Type:                               "String"
+    Default:                            "firehose_errors/"
+
+  FirehoseBufferingInterval:
+    Description:                        "Number of seconds that Firehose will wait to gather ingested records"
+    Type:                               "Number"
+    MinValue:                           60
+    MaxValue:                           900
+    Default:                            120
+
+  FirehoseFilesizeMB:
+    Description:                        "Target number of megabytes that Firehose will store in a single file"
+    Type:                               "Number"
+    MinValue:                           1
+    MaxValue:                           128
+    Default:                            32
+
+
+Resources:
+
+  ## Glue
+
+  GlueTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabaseName
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           !Ref GlueTableName
+        Description:                    "CloudTrail events with stringified nested objects"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueTableName}/"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "awsregion"
+              Type:                     "string"
+            - Name:                     "eventcategory"
+              Type:                     "string"
+            - Name:                     "eventid"
+              Type:                     "string"
+            - Name:                     "eventname"
+              Type:                     "string"
+            - Name:                     "eventsource"
+              Type:                     "string"
+            - Name:                     "eventtime"
+              Type:                     "timestamp"
+            - Name:                     "eventtype"
+              Type:                     "string"
+            - Name:                     "eventversion"
+              Type:                     "string"
+            - Name:                     "managementevent"
+              Type:                     "boolean"
+            - Name:                     "readonly"
+              Type:                     "boolean"
+            - Name:                     "recipientaccountid"
+              Type:                     "string"
+            - Name:                     "requestid"
+              Type:                     "string"
+            - Name:                     "requestparameters"
+              Type:                     "string"
+            - Name:                     "resources"
+              Type:                     "string"
+            - Name:                     "responseelements"
+              Type:                     "string"
+            - Name:                     "sharedeventid"
+              Type:                     "string"
+            - Name:                     "sourceipaddress"
+              Type:                     "string"
+            - Name:                     "useragent"
+              Type:                     "string"
+            - Name:                     "useridentity"
+              Type:                     "string"
+
+
+  GlueOptimizerRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/glue/"
+      RoleName:                         !Sub "${AWS::StackName}-GlueOptimizer-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "glue.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+
+
+  # need to separate role and policy to do a PassRole
+  GlueOptimizerRoleInlinePolicy:
+    Type:                               "AWS::IAM::RolePolicy"
+    Properties:
+      RoleName:                         !Ref GlueOptimizerRole
+      PolicyName:                       "OperationalPolicy"
+      PolicyDocument: 
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Action:
+              -                         "iam:PassRole"
+            Resource:
+              -                         !GetAtt GlueOptimizerRole.Arn
+          - Effect:                     "Allow"
+            Action:
+              -                         "glue:GetTable"
+              -                         "glue:UpdateTable"
+            Resource:
+              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
+              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/${GlueTableName}"
+          - Effect:                     "Allow"
+            Action:
+              -                         "s3:ListBucket"
+            Resource:
+              -                         !Sub "arn:aws:s3:::${S3Bucket}"
+          - Effect:                     "Allow"
+            Action:
+              -                         "s3:GetObject"
+              -                         "s3:DeleteObject"
+              -                         "s3:PutObject"
+            Resource:
+              -                         !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
+          - Effect:                     "Allow"
+            Action:
+              -                         "logs:CreateLogGroup"
+              -                         "logs:CreateLogStream"
+              -                         "logs:PutLogEvents"
+            Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/iceberg-*"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/iceberg-*:*"
+
+
+  ## Transformation Lambda
+
+  TransformLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  TransformLambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-TransformLambda-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:CreateLogStream"
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}:*"
+
+
+  TransformLambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref AWS::StackName
+      Description:                      !Sub "Transformation Lambda for Firehose ${AWS::StackName}"
+      Role:                             !GetAtt TransformLambdaRole.Arn
+      Runtime:                          "python3.12"
+      Handler:                          "index.lambda_handler"
+      MemorySize:                       1024
+      Timeout:                          60
+      Code:
+        ZipFile:                        |
+                                        import base64
+                                        import io
+                                        import json
+                                        import logging
+
+
+                                        LOGGER = logging.getLogger(__name__)
+                                        LOGGER.setLevel(logging.INFO)
+
+
+                                        def lambda_handler(event, context):
+                                            LOGGER.debug(f"event: \n {json.dumps(event)}")
+                                            result = {"records": [process(rec) for rec in event['records']]}
+                                            LOGGER.info(f"processed {len(result)} records")
+                                            LOGGER.debug(f"result: \n {json.dumps(result)}")
+                                            return result
+                                            
+                                            
+                                        def process(rec):
+                                            """ Handle a single JSON record, lowercasing all top-level keys.
+                                                """
+                                            record_id = rec['recordId']
+                                            try:
+                                                decoded =  base64.b64decode(rec['data'])
+                                                parsed = json.load(io.BytesIO(decoded))
+                                                transformed = dict([k.lower(), v] for k,v in parsed.items())
+                                                stringified = json.dumps(transformed)
+                                                encoded = base64.b64encode(bytes(stringified, "utf-8"))
+                                                return {
+                                                    'recordId': record_id,
+                                                    'result': 'Ok',
+                                                    'data': str(encoded, "utf-8")
+                                                } 
+                                            except Exception as ex:
+                                                LOGGER.warn(f"exception processing record", exc_info=True)
+                                                return {
+                                                    'recordId': record_id,
+                                                    'result': 'ProcessingFailed'
+                                                }
+
+
+
+  ## Firehose
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/aws/kinesisfirehose/${AWS::StackName}"
+      RetentionInDays:                  1
+
+
+  # create the log stream explicitly because otherwise Firehose Console shows an error
+  FirehoseS3LogStream:
+    Type:                               "AWS::Logs::LogStream"
+    Properties:
+      LogGroupName:                     !Ref FirehoseLogGroup
+      LogStreamName:                    "Destination_Errors"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:GetShardIterator"
+                -                       "kinesis:GetRecords"
+              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+        - PolicyName:                   "Transform"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "lambda:InvokeFunction"
+                  -                     "lambda:GetFunctionConfiguration"
+                Resource:
+                  -                     !Sub "${TransformLambdaFunction.Arn}"
+                  -                     !Sub "${TransformLambdaFunction.Arn}:*"
+        - PolicyName:                   "Destination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${FirehoseErrorPrefix}${GlueTableName}/*"
+        - PolicyName:                   "GlueCatalog"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "glue:GetDatabase"
+                -                       "glue:GetTable"
+                -                       "glue:GetTableVersion"
+                -                       "glue:GetTableVersions"
+                -                       "glue:UpdateTable"
+              Resource:
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/${GlueTableName}"
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+
+
+  Firehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Ref AWS::StackName
+      DeliveryStreamType:               "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+      IcebergDestinationConfiguration:
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        CatalogConfiguration:
+          CatalogArn:                   !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+        DestinationTableConfigurationList: 
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       !Ref GlueTableName
+            UniqueKeys:                 [ !Ref GluePrimaryKey ]
+        ProcessingConfiguration: 
+          Enabled:                      true
+          Processors: 
+            - Type:                     "Lambda"
+              Parameters:
+                - ParameterName:        "LambdaArn"
+                  ParameterValue:       !GetAtt TransformLambdaFunction.Arn
+                - ParameterName:        "RoleArn"
+                  ParameterValue:       !GetAtt FirehoseRole.Arn
+                - ParameterName:        "BufferSizeInMBs" 
+                  ParameterValue:       1
+                - ParameterName:        "BufferIntervalInSeconds" 
+                  ParameterValue:       60
+            - Type:                     "MetadataExtraction"
+              Parameters:
+                - ParameterName:        "MetadataExtractionQuery" 
+                  ParameterValue:       !Sub "{destinationDatabaseName:\"${GlueDatabaseName}\",destinationTableName:\"${GlueTableName}\",operation:\"update\"}"
+                - ParameterName:        "JsonParsingEngine" 
+                  ParameterValue:       "JQ-1.6"  # copied from manually-creaed Firehose description
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                !Ref FirehoseS3LogStream
+        S3Configuration: 
+          RoleARN:                      !GetAtt FirehoseRole.Arn
+          BucketARN:                    !Sub "arn:aws:s3:::${S3Bucket}"
+          BufferingHints:
+            IntervalInSeconds:          !Ref FirehoseBufferingInterval
+            SizeInMBs:                  !Ref FirehoseFilesizeMB
+          CompressionFormat:            "UNCOMPRESSED"
+          ErrorOutputPrefix:            !Sub "${FirehoseErrorPrefix}${GlueTableName}/"
+
+Outputs:
+
+  GlueOptimizaterRoleArn:
+    Description:                      "A role that may be used by Glue to optimize this table"
+    Value:                            !GetAtt GlueOptimizerRole.Arn
