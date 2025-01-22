@@ -220,6 +220,10 @@ Resources:
       Timeout:                          60
       Code:
         ZipFile:                        |
+                                        """ Lowercases all top-level fieldnames in the passed record, to make them
+                                            match the Glue table definition.
+                                            """
+
                                         import base64
                                         import io
                                         import json
@@ -231,34 +235,38 @@ Resources:
 
 
                                         def lambda_handler(event, context):
-                                            LOGGER.debug(f"event: \n {json.dumps(event)}")
-                                            result = {"records": [process(rec) for rec in event['records']]}
+                                            result = [process(rec) for rec in event['records']]
                                             LOGGER.info(f"processed {len(result)} records")
-                                            LOGGER.debug(f"result: \n {json.dumps(result)}")
-                                            return result
-                                            
-                                            
+                                            return {"records": result}
+
+
                                         def process(rec):
-                                            """ Handle a single JSON record, lowercasing all top-level keys.
+                                            """ Handle a single JSON record, decompressing it if needed.
                                                 """
                                             record_id = rec['recordId']
+                                            data = None
                                             try:
-                                                decoded =  base64.b64decode(rec['data'])
-                                                parsed = json.load(io.BytesIO(decoded))
-                                                transformed = dict([k.lower(), v] for k,v in parsed.items())
-                                                stringified = json.dumps(transformed)
-                                                encoded = base64.b64encode(bytes(stringified, "utf-8"))
+                                                data = base64.b64decode(rec['data'])
+                                                transformed = transform(data)
+                                                encoded = base64.b64encode(transformed)
                                                 return {
                                                     'recordId': record_id,
                                                     'result': 'Ok',
                                                     'data': str(encoded, "utf-8")
-                                                } 
+                                                }
                                             except Exception as ex:
-                                                LOGGER.warn(f"exception processing record", exc_info=True)
+                                                LOGGER.warn(f"exception processing record; data = {data}", exc_info=True)
                                                 return {
                                                     'recordId': record_id,
                                                     'result': 'ProcessingFailed'
                                                 }
+
+
+                                        def transform(rec:bytes) -> bytes: 
+                                            parsed = json.load(io.BytesIO(rec))
+                                            transformed = dict([k.lower(), v] for k,v in parsed.items())
+                                            stringified = json.dumps(transformed)
+                                            return bytes(stringified, "utf-8")
 
 
 
