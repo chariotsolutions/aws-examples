@@ -11,15 +11,17 @@
 
 
 import boto3
+import logging
 import re
 import sys
 
 from file_processor import FileProcessor
 
-
 if len(sys.argv) != 3:
     print(__doc__)
     sys.exit(1)
+
+logging.basicConfig(level=logging.INFO)
 
 fp = FileProcessor(boto3.client('s3'), boto3.client('kinesis'))
 

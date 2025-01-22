@@ -1,10 +1,13 @@
 import boto3
 import gzip
 import json
+import logging
 import time
 
 from kinesis_writer import KinesisWriter 
 
+
+logger = logging.getLogger(__name__)
 
 class FileProcessor:
 
@@ -38,7 +41,9 @@ class FileProcessor:
 
     def process(self, s3_bucket=None, s3_key=None, data=None, stream_name=None):
         writer = KinesisWriter(self.kinesis_client, stream_name)
-        for rec in self.extract_records(s3_bucket=s3_bucket, s3_key=s3_key, data=data):
+        recs = self.extract_records(s3_bucket=s3_bucket, s3_key=s3_key, data=data)
+        for rec in recs:
             writer.enqueue(json.dumps(rec), rec.get('eventID'))    
         while writer.flush():
             time.sleep(0.25)
+        logger.info(f"wrote {len(recs)} records")

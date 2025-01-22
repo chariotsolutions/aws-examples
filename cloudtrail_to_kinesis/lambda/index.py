@@ -19,6 +19,7 @@ def lambda_handler(event, context):
             eventName = record['eventName']
             bucket = record['s3']['bucket']['name']
             key = record['s3']['object']['key']
+            logger.info(f"processing s3://{bucket}/{key}")
             try:
                 fp.process(s3_bucket=bucket, s3_key=key, stream_name=kinesis_stream)
             except Exception as ex:
