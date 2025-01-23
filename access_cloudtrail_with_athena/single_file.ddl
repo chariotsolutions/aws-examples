@@ -1,27 +1,70 @@
-CREATE EXTERNAL TABLE `cloudtrail_single_file`(
-  `eventversion` string COMMENT 'from deserializer', 
-  `useridentity` struct<type:string,principalid:string,arn:string,accountid:string,invokedby:string,accesskeyid:string,username:string,sessioncontext:struct<attributes:struct<mfaauthenticated:string,creationdate:string>,sessionissuer:struct<type:string,principalid:string,arn:string,accountid:string,username:string>>> COMMENT 'from deserializer', 
-  `eventtime` string COMMENT 'from deserializer', 
-  `eventsource` string COMMENT 'from deserializer', 
-  `eventname` string COMMENT 'from deserializer', 
-  `awsregion` string COMMENT 'from deserializer', 
-  `sourceipaddress` string COMMENT 'from deserializer', 
-  `useragent` string COMMENT 'from deserializer', 
-  `errorcode` string COMMENT 'from deserializer', 
-  `errormessage` string COMMENT 'from deserializer', 
-  `requestparameters` string COMMENT 'from deserializer', 
-  `responseelements` string COMMENT 'from deserializer', 
-  `additionaleventdata` string COMMENT 'from deserializer', 
-  `requestid` string COMMENT 'from deserializer', 
-  `eventid` string COMMENT 'from deserializer', 
-  `resources` array<struct<arn:string,accountid:string,type:string>> COMMENT 'from deserializer', 
-  `eventtype` string COMMENT 'from deserializer', 
-  `apiversion` string COMMENT 'from deserializer', 
-  `readonly` string COMMENT 'from deserializer', 
-  `recipientaccountid` string COMMENT 'from deserializer', 
-  `serviceeventdetails` string COMMENT 'from deserializer', 
-  `sharedeventid` string COMMENT 'from deserializer', 
-  `vpcendpointid` string COMMENT 'from deserializer')
+CREATE EXTERNAL TABLE `cloudtrail_single_file` (
+    eventversion STRING,
+    useridentity STRUCT<
+                   type:STRING,
+                   principalid:STRING,
+                   arn:STRING,
+                   accountid:STRING,
+                   invokedby:STRING,
+                   accesskeyid:STRING,
+                   username:STRING,
+                   onbehalfof: STRUCT<
+                        userid: STRING,
+                        identitystorearn: STRING>,
+      sessioncontext:STRUCT<
+        attributes:STRUCT<
+                   mfaauthenticated:STRING,
+                   creationdate:STRING>,
+        sessionissuer:STRUCT<  
+                   type:STRING,
+                   principalid:STRING,
+                   arn:STRING, 
+                   accountid:STRING,
+                   username:STRING>,
+        ec2roledelivery:string,
+        webidfederationdata: STRUCT<
+                   federatedprovider: STRING,
+                   attributes: map<string,string>>
+      >
+    >,
+    eventtime STRING,
+    eventsource STRING,
+    eventname STRING,
+    awsregion STRING,
+    sourceipaddress STRING,
+    useragent STRING,
+    errorcode STRING,
+    errormessage STRING,
+    requestparameters STRING,
+    responseelements STRING,
+    additionaleventdata STRING,
+    requestid STRING,
+    eventid STRING,
+    resources ARRAY<STRUCT<
+                   arn:STRING,
+                   accountid:STRING,
+                   type:STRING>>,
+    eventtype STRING,
+    apiversion STRING,
+    readonly STRING,
+    recipientaccountid STRING,
+    serviceeventdetails STRING,
+    sharedeventid STRING,
+    vpcendpointid STRING,
+    vpcendpointaccountid STRING,
+    eventcategory STRING,
+    addendum STRUCT<
+      reason:STRING,
+      updatedfields:STRING,
+      originalrequestid:STRING,
+      originaleventid:STRING>,
+    sessioncredentialfromconsole STRING,
+    edgedevicedetails STRING,
+    tlsdetails STRUCT<
+      tlsversion:STRING,
+      ciphersuite:STRING,
+      clientprovidedhostheader:STRING>
+)
 ROW FORMAT SERDE 
   'org.apache.hive.hcatalog.data.JsonSerDe' 
 STORED AS INPUTFORMAT 
