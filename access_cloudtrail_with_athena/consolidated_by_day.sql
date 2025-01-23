@@ -1,13 +1,10 @@
--- In this query, the first three predicates are defined as partition fields; the last three are read from data.
--- Since this table uses partition projection, any or all of the partition predicates may be omitted.
+-- In this query, the first predicate uses a partition field; the last three are read from data.
 -- Because CloudTrail events may be written in files that cross date boundaries, our date partition predicate includes an extra day on either side.
 --
 
 select  eventname, count(*) 
 from    cloudtrail_raw_partition_projection
-where   account_id = '810107213182'
-and     region = 'us-east-1'
-and     ingest_date between '2024/01/31' and '2024/03/01'
+where   ingest_date between '2024/01/31' and '2024/03/01'
 and     eventtime between '2024-02-01T00:00:00Z' and '2024-02-28T23:59:59Z'
 and     recipientaccountid = '810107213182'
 and     awsregion = 'us-east-1'
