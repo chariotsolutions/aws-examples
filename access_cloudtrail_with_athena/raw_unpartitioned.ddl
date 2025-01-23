@@ -1,4 +1,4 @@
-CREATE EXTERNAL TABLE `cloudtrail_raw_unpartitioned`(
+CREATE EXTERNAL TABLE `cloudtrail_raw_unpartitioned` (
     eventversion STRING,
     useridentity STRUCT<
                    type:STRING,
@@ -66,11 +66,10 @@ CREATE EXTERNAL TABLE `cloudtrail_raw_unpartitioned`(
       clientprovidedhostheader:STRING>
 )
 ROW FORMAT SERDE 
-  'com.amazon.emr.hive.serde.CloudTrailSerde' 
+  'org.apache.hive.hcatalog.data.JsonSerDe' 
 STORED AS INPUTFORMAT 
   'com.amazon.emr.cloudtrail.CloudTrailInputFormat' 
 OUTPUTFORMAT 
   'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION
-  's3://BUCKET/PREFIX/'
-
+  's3://com-chariotsolutions-cloudtrail/'

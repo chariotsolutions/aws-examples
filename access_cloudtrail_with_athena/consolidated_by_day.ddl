@@ -1,3 +1,9 @@
+--
+-- NOTE: This table uses the OpenX JSON SerDe rather than the Hive SerDe. The latter has
+--       consistent issues with parsing the "requestparameters" and "responseelements"
+--       fields, resulting in silent data loss.
+--
+
 CREATE EXTERNAL TABLE `cloudtrail_consolidated_by_date` (
     eventversion STRING,
     useridentity STRUCT<
@@ -68,17 +74,17 @@ CREATE EXTERNAL TABLE `cloudtrail_consolidated_by_date` (
 PARTITIONED BY ( 
   `ingest_date` string)
 ROW FORMAT SERDE 
-  'org.apache.hive.hcatalog.data.JsonSerDe' 
+  'org.openx.data.jsonserde.JsonSerDe' 
 STORED AS INPUTFORMAT 
   'org.apache.hadoop.mapred.TextInputFormat' 
 OUTPUTFORMAT 
   'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION
-  's3://BUCKET/PREFIX/'
+  's3://com-chariotsolutions-kgregory-data/cloudtrail_daily/'
 TBLPROPERTIES (
   'projection.enabled'='true', 
   'projection.ingest_date.format'='yyyy/MM/dd', 
-  'projection.ingest_date.range'='2020/01/01,NOW', 
+  'projection.ingest_date.range'='2024/01/01,NOW', 
   'projection.ingest_date.type'='date', 
-  'storage.location.template'='s3://BUCKET/PREFIX/${ingest_date}', 
+  'storage.location.template'='s3://com-chariotsolutions-kgregory-data/cloudtrail_daily/${ingest_date}/'
 )
