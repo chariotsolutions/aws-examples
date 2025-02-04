@@ -17,6 +17,7 @@
     ]
   },
   "context": {
+    "@aws-cdk/aws-iam:oidcRejectUnauthorizedConnections": true,
     "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
     "@aws-cdk/core:stackRelativeExports": true,
     "@aws-cdk/aws-rds:lowercaseDbIdentifier": true,
