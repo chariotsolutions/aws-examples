@@ -1,0 +1,453 @@
+##
+## Creates a Glue database and tables for TPC-C data.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Glue table definitions for TPC-C benchmark tables"
+
+Parameters:
+
+  S3Bucket:
+    Description:                        "The bucket where data files will be written"
+    Type:                               "String"
+
+  GlueDatabaseName:
+    Description:                        "Name of the Glue database to holds the table defined by this template"
+    Type:                               "String"
+    Default:                            "tpcc_example"
+
+
+Resources:
+
+  GlueDatabase:
+    Type:                               "AWS::Glue::Database"
+    Properties:
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseInput: 
+        Name:                           !Ref GlueDatabaseName
+        Description:                    "Holds table definitions for TPC-C benchmark"
+
+
+  CustomerTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "customer"
+        Description:                    "TPC-C Customer table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/customer"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "c_w_id"
+              Type:                     "int"
+            - Name:                     "c_d_id"
+              Type:                     "int"
+            - Name:                     "c_id"
+              Type:                     "int"
+            - Name:                     "c_discount"
+              Type:                     "decimal(4,4)"
+            - Name:                     "c_credit"
+              Type:                     "string"
+            - Name:                     "c_last"
+              Type:                     "string"
+            - Name:                     "c_first"
+              Type:                     "string"
+            - Name:                     "c_credit_lim"
+              Type:                     "decimal(12,2)"
+            - Name:                     "c_balance"
+              Type:                     "decimal(12,2)"
+            - Name:                     "c_ytd_payment"
+              Type:                     "double"
+            - Name:                     "c_payment_cnt"
+              Type:                     "int"
+            - Name:                     "c_delivery_cnt"
+              Type:                     "int"
+            - Name:                     "c_street_1"
+              Type:                     "string"
+            - Name:                     "c_street_2"
+              Type:                     "string"
+            - Name:                     "c_city"
+              Type:                     "string"
+            - Name:                     "c_state"
+              Type:                     "string"
+            - Name:                     "c_zip"
+              Type:                     "string"
+            - Name:                     "c_phone"
+              Type:                     "string"
+            - Name:                     "c_since"
+              Type:                     "timestamp"
+            - Name:                     "c_middle"
+              Type:                     "string"
+            - Name:                     "c_data"
+              Type:                     "string"
+
+
+  DistrictTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "district"
+        Description:                    "TPC-C District table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/district"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "d_w_id"
+              Type:                     "int"
+            - Name:                     "d_id"
+              Type:                     "int"
+            - Name:                     "d_ytd"
+              Type:                     "decimal(12,2)"
+            - Name:                     "d_tax"
+              Type:                     "decimal(4,4)"
+            - Name:                     "d_next_o_id"
+              Type:                     "int"
+            - Name:                     "d_name"
+              Type:                     "string"
+            - Name:                     "d_street_1"
+              Type:                     "string"
+            - Name:                     "d_street_2"
+              Type:                     "string"
+            - Name:                     "d_city"
+              Type:                     "string"
+            - Name:                     "d_state"
+              Type:                     "string"
+            - Name:                     "d_zip"
+              Type:                     "string"
+
+
+  HistoryTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase 
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "history"
+        Description:                    "TPC-C History table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/history"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "h_c_id"
+              Type:                     "int"
+            - Name:                     "h_c_d_id"
+              Type:                     "int"
+            - Name:                     "h_c_w_id"
+              Type:                     "int"
+            - Name:                     "h_d_id"
+              Type:                     "int"
+            - Name:                     "h_w_id"
+              Type:                     "int"
+            - Name:                     "h_date"
+              Type:                     "timestamp"
+            - Name:                     "h_amount"
+              Type:                     "decimal(6,2)"
+            - Name:                     "h_data"
+              Type:                     "string"
+
+
+  ItemTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "item"
+        Description:                    "TPC-C Item table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/item"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "i_id"
+              Type:                     "int"
+            - Name:                     "i_name"
+              Type:                     "string"
+            - Name:                     "i_price"
+              Type:                     "decimal(5,2)"
+            - Name:                     "i_data"
+              Type:                     "string"
+            - Name:                     "i_im_id"
+              Type:                     "int"
+
+
+  NewOrderTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "new_order"
+        Description:                    "TPC-C New Order table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/new_order"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "no_w_id"
+              Type:                     "int"
+            - Name:                     "no_d_id"
+              Type:                     "int"
+            - Name:                     "no_o_id"
+              Type:                     "int"
+
+
+  OrderTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "oorder"
+        Description:                    "TPC-C Order table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/oorder"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "o_w_id"
+              Type:                     "int"
+            - Name:                     "o_d_id"
+              Type:                     "int"
+            - Name:                     "o_id"
+              Type:                     "int"
+            - Name:                     "o_c_id"
+              Type:                     "int"
+            - Name:                     "o_carrier_id"
+              Type:                     "int"
+            - Name:                     "o_ol_cnt"
+              Type:                     "int"
+            - Name:                     "o_all_local"
+              Type:                     "int"
+            - Name:                     "o_entry_d"
+              Type:                     "timestamp"
+
+
+  OrderLineTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "order_line"
+        Description:                    "TPC-C Order Line table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/order_line"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "ol_w_id"
+              Type:                     "int"
+            - Name:                     "ol_d_id"
+              Type:                     "int"
+            - Name:                     "ol_o_id"
+              Type:                     "int"
+            - Name:                     "ol_number"
+              Type:                     "int"
+            - Name:                     "ol_i_id"
+              Type:                     "int"
+            - Name:                     "ol_delivery_d"
+              Type:                     "timestamp"
+            - Name:                     "ol_amount"
+              Type:                     "decimal(6,2)"
+            - Name:                     "ol_supply_w_id"
+              Type:                     "int"
+            - Name:                     "ol_quantity"
+              Type:                     "decimal(6,2)"
+            - Name:                     "ol_dist_info"
+              Type:                     "string"
+
+
+  StockTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "stock"
+        Description:                    "TPC-C Stock table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/stock"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "s_w_id"
+              Type:                     "int"
+            - Name:                     "s_i_id"
+              Type:                     "int"
+            - Name:                     "s_quantity"
+              Type:                     "int"
+            - Name:                     "s_ytd"
+              Type:                     "decimal(8,2)"
+            - Name:                     "s_order_cnt"
+              Type:                     "int"
+            - Name:                     "s_remote_cnt"
+              Type:                     "int"
+            - Name:                     "s_data"
+              Type:                     "string"
+            - Name:                     "s_dist_01"
+              Type:                     "string"
+            - Name:                     "s_dist_02"
+              Type:                     "string"
+            - Name:                     "s_dist_03"
+              Type:                     "string"
+            - Name:                     "s_dist_04"
+              Type:                     "string"
+            - Name:                     "s_dist_05"
+              Type:                     "string"
+            - Name:                     "s_dist_06"
+              Type:                     "string"
+            - Name:                     "s_dist_07"
+              Type:                     "string"
+            - Name:                     "s_dist_08"
+              Type:                     "string"
+            - Name:                     "s_dist_09"
+              Type:                     "string"
+            - Name:                     "s_dist_10"
+              Type:                     "string"
+
+
+  WarehouseTable:
+    Type:                               "AWS::Glue::Table"
+    Properties: 
+      CatalogId:                        !Ref AWS::AccountId
+      DatabaseName:                     !Ref GlueDatabase
+      OpenTableFormatInput:
+        IcebergInput:
+          MetadataOperation:            "CREATE"
+      TableInput: 
+        Name:                           "warehouse"
+        Description:                    "TPC-C Warehouse table"
+        TableType:                      "EXTERNAL_TABLE"
+        StorageDescriptor: 
+          Location:                     !Sub "s3://${S3Bucket}/${GlueDatabase}/warehouse"
+          Compressed:                   false
+          Columns: 
+            - Name:                     "w_id"
+              Type:                     "int"
+            - Name:                     "w_ytd"
+              Type:                     "decimal(12,2)"
+            - Name:                     "w_tax"
+              Type:                     "decimal(4,4)"
+            - Name:                     "w_name"
+              Type:                     "string"
+            - Name:                     "w_street_1"
+              Type:                     "string"
+            - Name:                     "w_street_2"
+              Type:                     "string"
+            - Name:                     "w_city"
+              Type:                     "string"
+            - Name:                     "w_state"
+              Type:                     "string"
+            - Name:                     "w_zip"
+              Type:                     "string"
+
+#
+#
+#  GlueOptimizerRole:
+#    Type:                               "AWS::IAM::Role"
+#    Properties:
+#      Path:                             "/glue/"
+#      RoleName:                           !Sub "${AWS::StackName}-GlueOptimizer-${AWS::Region}"
+#      AssumeRolePolicyDocument:
+#        Version:                        "2012-10-17"
+#        Statement:
+#          Effect:                       "Allow"
+#          Principal:
+#            Service:                    "glue.amazonaws.com"
+#          Action:                       "sts:AssumeRole"
+#
+#
+#  # need to separate role and policy to do a PassRole
+#  GlueOptimizerRoleInlinePolicy:
+#    Type:                               "AWS::IAM::RolePolicy"
+#    Properties:
+#      RoleName:                         !Ref GlueOptimizerRole
+#      PolicyName:                       "OperationalPolicy"
+#      PolicyDocument: 
+#        Version:                        "2012-10-17"
+#        Statement:
+#          - Effect:                     "Allow"
+#            Action:
+#              -                         "iam:PassRole"
+#            Resource:
+#              -                         !GetAtt GlueOptimizerRole.Arn
+#          - Effect:                     "Allow"
+#            Action:
+#              -                         "glue:GetTable"
+#              -                         "glue:UpdateTable"
+#            Resource:
+#              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+#              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+#              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/*"
+#          - Effect:                     "Allow"
+#            Action:
+#              -                         "s3:ListBucket"
+#            Resource:
+#              -                         !Sub "arn:aws:s3:::${S3Bucket}"
+#          - Effect:                     "Allow"
+#            Action:
+#              -                         "s3:GetObject"
+#              -                         "s3:DeleteObject"
+#              -                         "s3:PutObject"
+#            Resource:
+#              -                         !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
+#          - Effect:                     "Allow"
+#            Action:
+#              -                         "logs:CreateLogGroup"
+#              -                         "logs:CreateLogStream"
+#              -                         "logs:PutLogEvents"
+#            Resource:
+#                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/iceberg-*"
+#                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/iceberg-*:*"

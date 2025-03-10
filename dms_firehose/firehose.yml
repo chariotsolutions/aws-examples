@@ -1,0 +1,368 @@
+##
+## Creates a Kinesis Firehose that reads TPC-C records from a Kinesis Stream
+## and writes them to Iceberg tables.
+##
+## The Firehose and related resources are naamed after the stack.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Firehose that reads a Kinesis Stream containing TPC-C data and writes it to Iceberg tables"
+
+Parameters:
+
+  KinesisStreamArn:
+    Description:                        "ARN of the Kinesis stream that contains database updates"
+    Type:                               "String"
+
+  S3Bucket:
+    Description:                        "The bucket where data files will be written"
+    Type:                               "String"
+
+  GlueDatabaseName:
+    Description:                        "Name of the Glue database to holds the table defined by this template"
+    Type:                               "String"
+    Default:                            "tpcc_example"
+
+  FirehoseErrorPrefix:
+    Description:                        "Prefix (in destination bucket) where error records wiill be written; must include trailing slash"
+    Type:                               "String"
+    Default:                            "firehose_errors/"
+
+  FirehoseBufferingInterval:
+    Description:                        "Number of seconds that Firehose will wait to gather ingested records"
+    Type:                               "Number"
+    MinValue:                           60
+    MaxValue:                           900
+    Default:                            120
+
+  FirehoseFilesizeMB:
+    Description:                        "Target number of megabytes that Firehose will store in a single file"
+    Type:                               "Number"
+    MinValue:                           1
+    MaxValue:                           128
+    Default:                            32
+
+
+Resources:
+
+  ## Transformation Lambda
+
+  TransformLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  TransformLambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-TransformLambda-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:CreateLogStream"
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}:*"
+
+
+  TransformLambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref AWS::StackName
+      Description:                      !Sub "Transformation Lambda for Firehose ${AWS::StackName}"
+      Role:                             !GetAtt TransformLambdaRole.Arn
+      Runtime:                          "python3.12"
+      Handler:                          "index.lambda_handler"
+      MemorySize:                       1024
+      Timeout:                          60
+      Environment:
+        Variables:
+          GLUE_DATABASE_NAME:           !Ref GlueDatabaseName
+      Code:
+        ZipFile:                        |
+                                        """ Firehose transformation Lambda that handles DMS-generated records that may apply
+                                            to multiple tables. Extracts table name, converts "load" operations to "insert",
+                                            and drops non-DML records.
+                                            """
+
+                                        import base64
+                                        import io
+                                        import json
+                                        import logging
+                                        import os
+
+                                        OPERATION_LOOKUP = {
+                                            "load": "insert",
+                                            "insert": "insert",
+                                            "update": "update",
+                                            "delete": "delete"
+                                        }
+
+                                        logger = logging.getLogger(__name__)
+                                        logger.setLevel(logging.INFO)
+
+                                        glue_database_name = os.environ['GLUE_DATABASE_NAME']
+
+
+                                        def lambda_handler(event, context):
+                                            result = [process(rec) for rec in event['records']]
+                                            logger.info(f"processed {len(result)} records")
+                                            return {"records": result}
+
+
+                                        def process(rec):
+                                            """ Handles a single source record from the transformation batch,
+                                                deciding its fate and reporting that decision back to Firehose.
+                                                """
+                                            record_id = rec['recordId']
+                                            data = None
+                                            try:
+                                                raw = base64.b64decode(rec['data'])
+                                                parsed = json.load(io.BytesIO(raw))
+                                                transform_result = transform(parsed)
+                                                if transform_result:
+                                                    (operation, table_name, transformed) = transform_result
+                                                    encoded = base64.b64encode(bytes(transformed, "utf-8"))
+                                                    return {
+                                                        'recordId': record_id,
+                                                        'result': 'Ok',
+                                                        'data': str(encoded, "utf-8"),
+                                                        'metadata': {
+                                                            'otfMetadata': {
+                                                                'operation': operation,
+                                                                'destinationDatabaseName': glue_database_name,
+                                                                'destinationTableName': table_name
+                                                            }
+                                                          }
+                                                    }
+                                                else:
+                                                    return {
+                                                        'recordId': record_id,
+                                                        'result': 'Dropped'
+                                                    }
+                                            except Exception as ex:
+                                                logger.warn(f"exception processing record; data = {data}", exc_info=True)
+                                                return {
+                                                    'recordId': record_id,
+                                                    'result': 'ProcessingFailed'
+                                                }
+
+
+                                        def transform(rec:bytes) -> bytes: 
+                                            """ The actual transformation logic happens here.
+                                                """
+                                            data = rec.get('data')
+                                            if not data:
+                                                return None
+                                            metadata = rec.get('metadata')
+                                            if not metadata:
+                                                return None
+                                            operation = OPERATION_LOOKUP.get(metadata.get('operation'))
+                                            if not operation:
+                                                return None
+                                            table_name = metadata.get('table-name')
+                                            if not table_name:
+                                                return None
+                                            return (operation, table_name, json.dumps(data))
+
+
+  ## Firehose
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/aws/kinesisfirehose/${AWS::StackName}"
+      RetentionInDays:                  1
+
+
+  # create the log stream explicitly because otherwise Firehose Console shows an error
+  FirehoseS3LogStream:
+    Type:                               "AWS::Logs::LogStream"
+    Properties:
+      LogGroupName:                     !Ref FirehoseLogGroup
+      LogStreamName:                    "Destination_Errors"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:GetShardIterator"
+                -                       "kinesis:GetRecords"
+              Resource:                 !Ref KinesisStreamArn
+        - PolicyName:                   "Transform"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "lambda:InvokeFunction"
+                  -                     "lambda:GetFunctionConfiguration"
+                Resource:
+                  -                     !Sub "${TransformLambdaFunction.Arn}"
+                  -                     !Sub "${TransformLambdaFunction.Arn}:*"
+        - PolicyName:                   "Destination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${GlueDatabaseName}/*"
+                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${FirehoseErrorPrefix}$/*"
+        - PolicyName:                   "GlueCatalog"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "glue:GetDatabase"
+                -                       "glue:GetTable"
+                -                       "glue:GetTableVersion"
+                -                       "glue:GetTableVersions"
+                -                       "glue:UpdateTable"
+              Resource:
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/*"
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+
+
+  Firehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Ref AWS::StackName
+      DeliveryStreamType:               "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:               !Ref KinesisStreamArn
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+      IcebergDestinationConfiguration:
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        CatalogConfiguration:
+          CatalogArn:                   !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+        DestinationTableConfigurationList: 
+          # note: history table does not have a unique key
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "customer"
+            UniqueKeys:                 [ "c_w_id", "c_d_id", "c_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "district"
+            UniqueKeys:                 [ "d_w_id", "d_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "item"
+            UniqueKeys:                 [ "i_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "new_order"
+            UniqueKeys:                 [ "no_w_id", "no_d_id", "no_o_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "oorder"
+            UniqueKeys:                 [ "o_w_id", "o_d_id", "o_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "order_line"
+            UniqueKeys:                 [ "ol_w_id", "ol_d_id", "ol_o_id", "ol_number" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "stock"
+            UniqueKeys:                 [ "s_w_id", "s_i_id" ]
+          - DestinationDatabaseName:    !Ref GlueDatabaseName
+            DestinationTableName:       "warehouse"
+            UniqueKeys:                 [ "w_id" ]
+        ProcessingConfiguration: 
+          Enabled:                      true
+          Processors: 
+            - Type:                     "Lambda"
+              Parameters:
+                - ParameterName:        "LambdaArn"
+                  ParameterValue:       !GetAtt TransformLambdaFunction.Arn
+                - ParameterName:        "RoleArn"
+                  ParameterValue:       !GetAtt FirehoseRole.Arn
+                - ParameterName:        "BufferSizeInMBs" 
+                  ParameterValue:       1
+                - ParameterName:        "BufferIntervalInSeconds" 
+                  ParameterValue:       60
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                !Ref FirehoseS3LogStream
+        S3Configuration: 
+          RoleARN:                      !GetAtt FirehoseRole.Arn
+          BucketARN:                    !Sub "arn:aws:s3:::${S3Bucket}"
+          BufferingHints:
+            IntervalInSeconds:          !Ref FirehoseBufferingInterval
+            SizeInMBs:                  !Ref FirehoseFilesizeMB
+          CompressionFormat:            "UNCOMPRESSED"
+          ErrorOutputPrefix:            !Sub "${FirehoseErrorPrefix}${GlueDatabaseName}/"
