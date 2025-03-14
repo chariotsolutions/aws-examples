@@ -1,0 +1,259 @@
+##
+## Creates the DMS infrastructure (endpoints, replication ## instance, and task)
+## to perform change-data-capture on a Postgres database, writing to Kinesis.
+##
+## The connection information for the Postres server is provided in a Secrets
+## Manager secret, using the standard RDS secret format.
+##
+## The replication instance configuration assumes that it will run in public
+## subnets. If you want to pay NAT charges, provide private subnet IDs and
+## disable the public IP address in the ReplicationInstance.
+##
+## The provided database security group will be updated with an ingress rule
+## that allows connections from the replication instance.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Creates Data Migration Service resources to write Postgres database to Kinesis stream"
+
+Parameters:
+
+  ReplicationInstanceName:
+    Description:                        "Name give to the replication instance, as well as other resources created by this template; lower-case letters and hyphens only"
+    Type:                               "String"
+    Default:                            "database-capture"
+
+  VpcId:
+    Description:                        "VPC where the replication instance will be deployed"
+    Type:                               "AWS::EC2::VPC::Id"
+
+  SubnetIds:
+    Description:                        "Allowed subnets for replication instances (assumed public)"
+    Type:                               "List<AWS::EC2::Subnet::Id>"
+
+  DatabaseSecretArn:
+    Description:                        "ARN of the secret used to hold a database user with replication privileges"
+    Type:                               "String"
+
+  DatabaseSecurityGroupId:
+    Description:                        "ID of the security group controlling access to the database (will be updated)"
+    Type:                               "String"
+
+  DatabaseSSLMode:
+    Description:                        "Controls whether/how SSL is used for the source database connection"
+    Type:                               "String"
+    AllowedValues:                      [ "none", "require", "verify-ca", "verify-full" ]
+    Default:                            "require"
+
+  KinesisStreamArn:
+    Description:                        "ARN of the Kinesis stream that will receive database updates"
+    Type:                               "String"
+
+
+Resources:
+
+  ReplicationInstanceSecurityGroup:
+    Type:                               "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName:                        !Sub "DMS-${ReplicationInstanceName}"
+      GroupDescription:                 !Sub "Attached to DMS replication instance ${ReplicationInstanceName}, managed by CloudFormation stack ${AWS::StackName}"
+      VpcId:                            !Ref VpcId
+
+
+  DatabaseSecurityGroupIngress:
+    Type:                               "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description:                      !Sub "Grants access for Data Migration Service replication instance$ ${ReplicationInstanceName}"
+      GroupId:                          !Ref DatabaseSecurityGroupId
+      IpProtocol:                       "tcp"
+      FromPort:                         !Sub "{{resolve:secretsmanager:${DatabaseSecretArn}:SecretString:port}}"
+      ToPort:                           !Sub "{{resolve:secretsmanager:${DatabaseSecretArn}:SecretString:port}}"
+      SourceSecurityGroupId:            !Ref ReplicationInstanceSecurityGroup
+
+
+  ReplicationInstanceSubnetGroup:
+    Type:                               "AWS::DMS::ReplicationSubnetGroup"
+    Properties:
+      ReplicationSubnetGroupDescription: !Sub "Subnet group for replication instance managed by CloudFormation stack ${AWS::StackName}"
+      SubnetIds:                        !Ref SubnetIds
+
+
+  ReplicationInstance:
+    Type:                               "AWS::DMS::ReplicationInstance"
+    Properties:
+      ReplicationInstanceIdentifier:    !Ref ReplicationInstanceName
+      ResourceIdentifier:               !Ref ReplicationInstanceName
+      ReplicationInstanceClass:         "dms.t3.medium"
+      AllocatedStorage:                 64
+      AllowMajorVersionUpgrade:         true
+      AutoMinorVersionUpgrade:          true
+      MultiAZ:                          false
+      PubliclyAccessible:               true
+      ReplicationSubnetGroupIdentifier: !Ref ReplicationInstanceSubnetGroup
+      VpcSecurityGroupIds:              [ !Ref ReplicationInstanceSecurityGroup ]
+
+
+  ReplicationRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    
+              -                         "dms.amazonaws.com"
+              -                         !Sub "dms.${AWS::Region}.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              "AWS:SourceAccount":      !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source_Secret"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "secretsmanager:GetSecretValue"
+              Resource:                 !Ref DatabaseSecretArn
+        - PolicyName:                   "Destination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:PutRecord"
+                -                       "kinesis:PutRecords"
+              Resource:                 !Ref KinesisStreamArn
+
+
+  SourceEndpoint:
+    Type:                               "AWS::DMS::Endpoint"
+    Properties:
+      EndpointType:                     "source"
+      EndpointIdentifier:               !Sub "${ReplicationInstanceName}-source"
+      EngineName:                       "postgres"
+      SslMode:                          !Ref DatabaseSSLMode
+      DatabaseName:                     !Sub "{{resolve:secretsmanager:${DatabaseSecretArn}:SecretString:dbname}}"  # documented as not required, but it is
+      PostgreSqlSettings:
+        SecretsManagerSecretId:         !Ref DatabaseSecretArn
+        SecretsManagerAccessRoleArn:    !GetAtt ReplicationRole.Arn
+        PluginName:                     "pglogical"   # the default, but specified here as a reminder
+        FailTasksOnLobTruncation:       true
+        HeartbeatEnable:                true
+        MapBooleanAsBoolean:            true
+
+
+  TargetEndpoint:
+    Type:                               "AWS::DMS::Endpoint"
+    Properties:
+      EndpointType:                     "target"
+      EndpointIdentifier:               !Sub "${ReplicationInstanceName}-target"
+      EngineName:                       "kinesis"
+      KinesisSettings:
+        StreamArn:                      !Ref KinesisStreamArn
+        ServiceAccessRoleArn:           !GetAtt ReplicationRole.Arn
+        MessageFormat:                  "json"
+        IncludeNullAndEmpty:            true
+        PartitionIncludeSchemaTable:    true
+
+
+  ReplicationTask:
+    Type:                               "AWS::DMS::ReplicationTask"
+    Properties:
+      ReplicationTaskIdentifier:        !Ref ReplicationInstanceName
+      MigrationType:                    "full-load-and-cdc"
+      ReplicationInstanceArn:           !Ref ReplicationInstance
+      SourceEndpointArn:                !Ref SourceEndpoint
+      TargetEndpointArn:                !Ref TargetEndpoint
+      TableMappings:                    |
+                                        {
+                                          "rules": [
+                                            {
+                                              "rule-id": "1",
+                                              "rule-name": "default",
+                                              "rule-type": "selection",
+                                              "rule-action": "include",
+                                              "object-locator": {
+                                                "schema-name": "public",
+                                                "table-name": "%"
+                                              }
+                                            }
+                                          ]
+                                        }
+      ReplicationTaskSettings:          |
+                                        {
+                                          "TargetMetadata": {
+                                            "SupportLobs": true,
+                                            "FullLobMode": false,
+                                            "LobChunkSize": 64,
+                                            "LimitedSizeLobMode": true,
+                                            "LobMaxSize": 64,
+                                            "InlineLobMaxSize": 0,
+                                            "LoadMaxFileSize": 0,
+                                            "ParallelLoadThreads": 2,
+                                            "ParallelLoadBufferSize":128,
+                                            "ParallelLoadQueuesPerThread": 1,
+                                            "ParallelApplyThreads": 2,
+                                            "ParallelApplyBufferSize": 128,
+                                            "ParallelApplyQueuesPerThread": 1,    
+                                            "BatchApplyEnabled": false,
+                                            "TaskRecoveryTableEnabled": false
+                                          },
+                                          "FullLoadSettings": {
+                                            "TargetTablePrepMode": "DO_NOTHING",
+                                            "ParallelLoadThreads": 4
+                                          },
+                                          "Logging": {
+                                            "EnableLogging": true,
+                                            "EnableLogContext": true
+                                          },
+                                          "ErrorBehavior": {
+                                            "ApplyErrorDeletePolicy": "IGNORE_RECORD",
+                                            "ApplyErrorEscalationCount": 0,
+                                            "ApplyErrorEscalationPolicy": "LOG_ERROR",
+                                            "ApplyErrorFailOnTruncationDdl": false,
+                                            "ApplyErrorInsertPolicy": "LOG_ERROR",
+                                            "ApplyErrorUpdatePolicy": "LOG_ERROR",
+                                            "DataErrorEscalationCount": 0,
+                                            "DataErrorEscalationPolicy": "SUSPEND_TABLE",
+                                            "DataErrorPolicy": "LOG_ERROR",
+                                            "DataMaskingErrorPolicy": "STOP_TASK",
+                                            "DataTruncationErrorPolicy": "LOG_ERROR",
+                                            "EventErrorPolicy": "IGNORE",
+                                            "FailOnNoTablesCaptured": false,
+                                            "FailOnTransactionConsistencyBreached": false,
+                                            "FullLoadIgnoreConflicts": true,
+                                            "RecoverableErrorCount": -1,
+                                            "RecoverableErrorInterval": 5,
+                                            "RecoverableErrorStopRetryAfterThrottlingMax": true,
+                                            "RecoverableErrorThrottlingMax": 1800,
+                                            "RecoverableErrorThrottling": true,
+                                            "TableErrorEscalationCount": 0,
+                                            "TableErrorEscalationPolicy": "STOP_TASK",
+                                            "TableErrorPolicy": "SUSPEND_TABLE"
+                                          }
+                                        }
