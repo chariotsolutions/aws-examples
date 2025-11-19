@@ -1,3 +1,9 @@
+**Warning:** this project has not been updated since 2020, and there are no plans to update it.
+
+**Do not use the code here without review of current best practices.**
+
+----
+
 This project is another comparison of infrastructure management tools for AWS. It
 demonstrates the use of Terraform modules and CDK constructs to produce multiple
 SQS queues with a consistent configuration.

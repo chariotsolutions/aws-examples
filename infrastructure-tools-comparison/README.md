@@ -1,3 +1,9 @@
+**Warning:** this project has not been updated since 2020, and there are no plans to update it.
+
+**Do not use the code here without review of current best practices.**
+
+----
+
 This project is a companion for [a blog post](https://chariotsolutions.com/blog/post/comparing-infrastructure-tools-a-first-look-at-the-aws-cloud-development-kit/)
 comparing various infrastructure management tools for AWS. As an example, it creates a set of
 users, groups, and roles as describe in [this blog post](https://chariotsolutions.com/blog/post/managing-aws-users-and-roles-in-a-multi-account-organization/).
