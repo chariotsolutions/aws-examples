@@ -1,3 +1,5 @@
+# Source: https://github.com/kdgregory/aws-misc/blob/trunk/python/kinesis/kinesis_writer.py
+################################################################################
 # Copyright 2023, Keith D Gregory
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,8 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Origin: https://github.com/kdgregory/aws-misc/tree/trunk/python/kinesis
 
 
 import boto3
@@ -149,3 +149,4 @@ class KinesisWriter:
         self._queue.append(queued_message)
         self._bytes_in_queue += queued_message.record_size
         return (self._bytes_in_queue >= 5 * 1024 * 1024) or (len(self._queue) >= 500)
+

@@ -21,7 +21,7 @@ To build and deploy:
 2. Deploy the Lambda
 
    The CloudFormation template creates a Lambda with a dummy handler. You can either manually create a ZIP
-   file from the contents of the `lambda` directory, or use _make_:
+   file from the contents of the `lambda` directory, or run _make_ from the project directory:
 
    ```
    make deploy
