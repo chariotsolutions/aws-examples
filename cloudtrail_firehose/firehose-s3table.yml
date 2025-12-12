@@ -1,0 +1,449 @@
+##
+## Creates an S3 Table Bucket, Namespace, and Table to hold CloudTrail events,
+## with a Kinesis Firehose to populate it.
+##
+## The Firehose and related resources are naamed after the stack.
+##
+## This Firehose uses a transformation Lambda to convert the raw event data to
+## match the table definition. This template creates a "dummy" Lambda that you
+## must then mandually update with source code from the "cloudtrail_firehose_transform"
+## directory in this repository.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Kinesis Firehose to S3 Table Bucket table"
+
+Parameters:
+
+  Phase:
+    Description:                        "Used to delay creation of the Firehose until after permissions have been granted to role"
+    Type:                               "String"
+    AllowedValues:                      ["1", "2"]
+    Default:                            "1"
+
+  KinesisStream:
+    Description:                        "Name of the Kinesis stream containing CloudTrail events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  TableBucketName:
+    Description:                        "The name of the S3 Table Bucket"
+    Type:                               "String"
+    Default:                            "example"
+
+  NamespaceName:
+    Description:                        "The name of the S3 Table Namespace"
+    Type:                               "String"
+    Default:                            "default"
+
+  TableName:
+    Description:                        "The name of the S3 Table"
+    Type:                               "String"
+    Default:                            "cloudtrail"
+
+  PrimaryKey:
+    Description:                        "Name of the primary key field"
+    Type:                               "String"
+    Default:                            "event_id"
+
+  FirehoseErrorBucket:
+    Description:                        "An S3 bucket tht will hold Firehose error reports"
+    Type:                               "String"
+
+  FirehoseErrorPrefix:
+    Description:                        "Prefix (in destination bucket) where error records wiill be written; must include trailing slash"
+    Type:                               "String"
+    Default:                            "firehose_errors/"
+
+  FirehoseBatchTime:
+    Description:                        "Number of seconds that Firehose will wait to gather ingested records"
+    Type:                               "Number"
+    MinValue:                           60
+    MaxValue:                           900
+    Default:                            120
+
+  FirehoseBatchSize:
+    Description:                        "Target number of megabytes that Firehose will store in a single file"
+    Type:                               "Number"
+    MinValue:                           1
+    MaxValue:                           128
+    Default:                            32
+
+
+Conditions:
+
+  CreateFirehose:                       !Equals [ !Ref Phase, "2" ]
+
+Resources:
+
+  Bucket:
+    Type:                               "AWS::S3Tables::TableBucket"
+    Properties:
+      TableBucketName:                  !Ref TableBucketName
+      EncryptionConfiguration: 
+        SSEAlgorithm:                   "AES256"
+      UnreferencedFileRemoval: 
+        Status:                         "Enabled"
+        UnreferencedDays:               1
+        NoncurrentDays:                 1
+
+
+  Namespace:
+    Type:                               "AWS::S3Tables::Namespace"
+    Properties:
+      Namespace:                        !Ref NamespaceName
+      TableBucketARN:                   !GetAtt Bucket.TableBucketARN
+
+
+  Table:
+    Type:                               "AWS::S3Tables::Table"
+    DependsOn:                          [ Namespace ]
+    Properties:
+      TableName:                        !Ref TableName
+      TableBucketARN:                   !GetAtt Bucket.TableBucketARN
+      Namespace:                        !Ref NamespaceName    # note: !Ref Namespace returns an invalid value
+      OpenTableFormat:                  "ICEBERG"
+      Compaction: 
+        Status:                         "enabled"
+        TargetFileSizeMB:               64                  # the default of 512M is probably too large to be efficient; this may be too small
+      SnapshotManagement: 
+        Status:                         "enabled"
+        MaxSnapshotAgeHours:            24
+        MinSnapshotsToKeep:             8
+      IcebergMetadata: 
+        IcebergSchema:
+          SchemaFieldList:
+            - Name:                     "event_id"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "event_time"
+              Type:                     "timestamp"
+              Required:                 True
+            - Name:                     "event_name"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "event_category"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "event_type"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "event_version"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "aws_region"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "event_source"
+              Type:                     "string"
+              Required:                 True
+            - Name:                     "management_event"
+              Type:                     "boolean"
+            - Name:                     "read_only"
+              Type:                     "boolean"
+            - Name:                     "api_version"
+              Type:                     "string"
+            - Name:                     "recipient_account_id"
+              Type:                     "string"
+            - Name:                     "source_ip_address"
+              Type:                     "string"
+            - Name:                     "request_id"
+              Type:                     "string"
+            - Name:                     "shared_event_id"
+              Type:                     "string"
+            - Name:                     "request_parameters"
+              Type:                     "string"
+            - Name:                     "response_elements"
+              Type:                     "string"
+            - Name:                     "resources"
+              Type:                     "string"
+            - Name:                     "additional_event_data"
+              Type:                     "string"
+            - Name:                     "service_event_details"
+              Type:                     "string"
+            - Name:                     "user_agent"
+              Type:                     "string"
+            - Name:                     "user_identity"
+              Type:                     "string"
+            - Name:                     "tls_details"
+              Type:                     "string"
+            - Name:                     "vpc_endpoint_id"
+              Type:                     "string"
+            - Name:                     "vpc_endpoint_account_-d"
+              Type:                     "string"
+            - Name:                     "error_code"
+              Type:                     "string"
+            - Name:                     "error_message"
+              Type:                     "string"
+
+
+  ## Transformation Lambda
+
+  TransformLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  TransformLambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-TransformLambda-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:CreateLogStream"
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}:*"
+
+
+  TransformLambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref AWS::StackName
+      Description:                      !Sub "Transformation Lambda for Firehose ${AWS::StackName}"
+      Role:                             !GetAtt TransformLambdaRole.Arn
+      Runtime:                          "python3.12"
+      Handler:                          "index.lambda_handler"
+      MemorySize:                       1024
+      Timeout:                          60
+      Code:
+        ZipFile:                        |
+                                        """ Dummy transformation; replace with cloudtrail_firehose_transform/index.py
+                                            """
+
+                                        def lambda_handler(event, context):
+                                            raise Exception("replace with actual transformer")
+      Environment:
+        Variables:
+          USE_SNAKE_CASE:               "1"
+          DISCARD_UNKNOWN_FIELDS:       "1"
+
+  ## Firehose
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/aws/kinesisfirehose/${AWS::StackName}"
+      RetentionInDays:                  1
+
+
+  # create the log stream explicitly because otherwise Firehose Console shows an error
+  FirehoseDestLogStream:
+    Type:                               "AWS::Logs::LogStream"
+    Properties:
+      LogGroupName:                     !Ref FirehoseLogGroup
+      LogStreamName:                    "Destination_Errors"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:GetShardIterator"
+                -                       "kinesis:GetRecords"
+              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
+        - PolicyName:                   "Transform"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "lambda:InvokeFunction"
+                  -                     "lambda:GetFunctionConfiguration"
+                Resource:
+                  -                     !Sub "${TransformLambdaFunction.Arn}"
+                  -                     !Sub "${TransformLambdaFunction.Arn}:*"
+        - PolicyName:                   "GlueFederation"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "glue:GetTable"
+                -                       "glue:GetDatabase"
+                -                       "glue:UpdateTable"
+              Resource:
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/*"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*/*"
+        - PolicyName:                   "LakeFormation"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "lakeformation:GetDataAccess"
+              Resource:                 "*"
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "logs:Describe*"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}${TableName}/*"
+
+
+##  Can't create permissions on S3 Tables because of catalog ID validation;
+##  see https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/2316
+##
+##  I'm also guessing at some of the values, based off the response from the ListPermissions
+##  API; the CloudFormation docs don't show examples for S3Tables resources (and don't 
+##  document the Catalog resource, even though the API docs do)
+##
+##
+##  FirehoseCatalogPermission:
+##    Type:                               "AWS::LakeFormation::PrincipalPermissions"
+##    Properties:
+##      Principal: 
+##        DataLakePrincipalIdentifier:    !GetAtt FirehoseRole.Arn
+##      Resource: 
+##        Catalog:
+##          Id:                           !Sub "${AWS::Region}:s3tablescatalog/${TableBucketName}"
+##      Permissions: 
+##        -                               "DESCRIBE"
+##      PermissionsWithGrantOption:       []
+##
+##
+##  FirehoseTablePermission:
+##    Type:                               "AWS::LakeFormation::PrincipalPermissions"
+##    Properties:
+##      Principal: 
+##        DataLakePrincipalIdentifier:    !GetAtt FirehoseRole.Arn
+##      Resource: 
+##        Table: 
+##          CatalogId:                    !Sub "${AWS::Region}:s3tablescatalog/${TableBucketName}"
+##          DatabaseName:                 !Ref NamespaceName
+##          Name:                         !Ref TableName
+##
+##      Permissions: 
+##        -                               "ALL"
+##      PermissionsWithGrantOption:       []
+
+
+  Firehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Condition:                          CreateFirehose
+    Properties:
+      DeliveryStreamName:               !Ref AWS::StackName
+      DeliveryStreamType:               "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+      IcebergDestinationConfiguration:
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        CatalogConfiguration:
+          CatalogArn:                   !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${TableBucketName}"
+        DestinationTableConfigurationList: 
+          - DestinationDatabaseName:    !Ref NamespaceName
+            DestinationTableName:       !Ref TableName
+            UniqueKeys:                 [ !Ref PrimaryKey ]
+        ProcessingConfiguration: 
+          Enabled:                      true
+          Processors: 
+            - Type:                     "Lambda"
+              Parameters:
+                - ParameterName:        "LambdaArn"
+                  ParameterValue:       !GetAtt TransformLambdaFunction.Arn
+                - ParameterName:        "RoleArn"
+                  ParameterValue:       !GetAtt FirehoseRole.Arn
+                - ParameterName:        "BufferSizeInMBs" 
+                  ParameterValue:       1
+                - ParameterName:        "BufferIntervalInSeconds" 
+                  ParameterValue:       60
+            - Type:                     "MetadataExtraction"
+              Parameters:
+                - ParameterName:        "MetadataExtractionQuery" 
+                  ParameterValue:       !Sub "{destinationDatabaseName:\"${NamespaceName}\",destinationTableName:\"${TableName}\",operation:\"update\"}"
+                - ParameterName:        "JsonParsingEngine" 
+                  ParameterValue:       "JQ-1.6"  # copied from manually-creaed Firehose description
+        BufferingHints:
+          IntervalInSeconds:            !Ref FirehoseBatchTime
+          SizeInMBs:                    !Ref FirehoseBatchSize
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                !Ref FirehoseDestLogStream
+        S3Configuration: 
+          RoleARN:                      !GetAtt FirehoseRole.Arn
+          BucketARN:                    !Sub "arn:aws:s3:::${FirehoseErrorBucket}"
+          BufferingHints:
+            IntervalInSeconds:          !Ref FirehoseBatchTime
+            SizeInMBs:                  !Ref FirehoseBatchSize
+          CompressionFormat:            "UNCOMPRESSED"
+          ErrorOutputPrefix:            !Sub "${FirehoseErrorPrefix}${TableName}/"

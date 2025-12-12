@@ -9,9 +9,6 @@ CloudTrail events to different destinations:
   Bucket (with LakeFormation granting access).
 * [firehose-redshift.yml](firehose-redshift.yml) writes to a table managed by Redshift.
 
-Note: destroying these stacks does _not_ delete any table data stored in S3; you must
-clean up the destination locations manually.
-
 
 ## Deployment
 
@@ -63,7 +60,11 @@ Parameters:
 
 Notes:
 
-* The data produced by this Firehose may contain duplicate events.
+* The data produced by this Firehose may contain duplicate events, either due to CloudTrail
+  recording those duplicates, or best-effort handling of CloudTrail notifications.
+
+* Deleting this stack _does not_ delete the data. If you delete and then recreate the stack,
+  you will already have data in the table.
 
 
 ### firehose-iceberg.yml
@@ -78,7 +79,8 @@ Parameters:
 * `TableName`: the name of the tble to create. This will also be used as the prefix for the
   table's data files. Defaults to `cloudtrail_parquet`.
 * `TableBucket`: the name of an existing S3 bucket that will hold the table's data.
-* `PrimaryKey`: the column used as a primary key for the table, allowing upserts.
+* `PrimaryKey`: the column used as a primary key for the table, allowing upserts. Defaults to
+  `event_id`, and should not be changed.
 
 
 Notes:
@@ -88,10 +90,45 @@ Notes:
   table causes CloudFormation to fail. However, this emplate does create (and output) a role that Glue can
   use to perform optimizations.
 
+* Deleting this stack _does not_ delete the data. If you delete and then attempt to recreate the stack,
+  it will fail due to existing metadata.
+
 
 ### firehose-s3tables.yml
 
 This template creates an S3 table bucket, namespace, and table, along with a Firehose to populate it.
+
+This template must be run in two phases: as of this writing, you cannot assign LakeFormation permissions
+using CloudFormation: the `AWS::LakeFormation::PrincipalPermissions` only accepts account numbers as a
+catalog ID. To work-around, you must do the following:
+
+* Apply the template with whatever configuration is appropriate for your environment, _leaving
+  the `Phase` parameter with its default value of "1"_.
+* Go into LakeFormation, and attach permissions to the created Firehose Role, as described
+  [here](https://docs.aws.amazon.com/AmazonS3/latest/userguide/grant-permissions-tables.html).
+  Firehose requires Describe permission on `s3tablescatalog` and the catalog created by this
+  template, and Super permissions on the table.
+* Re-apply the template, with `Phase` set to "2".
+
+
+Parameters:
+
+* `Phase`: used to defer creation of Firehose until permissions have been configured (see notes).
+* `TableBucketName`: the name of the table bucket to create. Defaults to `example`.
+* `NamespaceName`: the name of the namespace to create. Defaults to `default`.
+* `TableName`: the name of the tble to create. This will also be used as the prefix for the
+  table's data files. Defaults to `cloudtrail`.
+* `PrimaryKey`: the column used as a primary key for the table, allowing upserts. Defaults to
+  `event_id`, and should not be changed.
+
+Notes:
+
+* When you delete this stack, it will delete the table bucket, but the actual bucket deletion
+  happens asynchronously. This means that the name can not be reused right away (I have seen
+  reports that it might take a day or more before the name can be reused).
+
+* When you delete this stack, you must manually revoke the LakeFormation permissions that you
+  granted to the Firehose execution role.
 
 
 ### firehose-redshift.yml
