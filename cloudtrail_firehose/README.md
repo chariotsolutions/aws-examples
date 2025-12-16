@@ -110,7 +110,6 @@ catalog ID. To work-around, you must do the following:
   template, and Super permissions on the table.
 * Re-apply the template, with `Phase` set to "2".
 
-
 Parameters:
 
 * `Phase`: used to defer creation of Firehose until permissions have been configured (see notes).
@@ -132,3 +131,33 @@ Notes:
 
 
 ### firehose-redshift.yml
+
+This template creates a Firehose that writes to an existing table on a Redshift cluster using
+an S3 bucket as a staging area.
+
+Prerequisites:
+
+* Create a publicly-accessible Redshift cluser. This can either be Serverless or Provisioned.
+* Update the security group on that cluster to allow access from the regional Firehose CIDR as
+  described [here](https://docs.aws.amazon.com/firehose/latest/dev/controlling-access.html#using-iam-rs-vpc).
+* Create the target table, using [this DDL](redshift.ddl).
+* Create a Secrets Manager secret that holds credentials for a user in that cluster that can
+  write to the target table. This secret must hold a JSON object with `username` and
+  `password` fields.
+
+Parameters:
+
+* `DatabaseHost`: the hostname of the cluster. No default.
+* `DatabasePort`: the port used to connect to the cluster. Defaults to 5439.
+* `DatabaseName`: the name of the database that holds the target table. No default.
+* `DatabaseSecretArn`: the ARN of the Secrets Manager secret holding connection credentials.
+  No default.
+* `TableName`: the name of the destination table. No default.
+* `FirehoseStagingBucket`: the name of the bucket to use for staging data before copying to
+  Redshift. No default.
+* `FirehoseStagingPrefix`: the prefix used for staging files. Defaults to `firehose_staging/`.
+
+Notes:
+
+* Firehose does not remove files from the staging bucket once they've been successfully
+  uploaded. You will need to manually remove them or use them as an archive.

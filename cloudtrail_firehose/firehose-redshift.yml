@@ -1,0 +1,313 @@
+##
+## Creates a Kinesis Firehose that accepts CloudTrail events from Kinesis and
+## writes them to an existing Redshift table. See redshift.ddl for the table
+## definition.
+##
+## The Firehose and related resources are named after the stack.
+##
+## This Firehose uses a transformation Lambda to convert the raw event data to
+## match the table definition. This template creates a "dummy" Lambda that you
+## must then mandually update with source code from the "cloudtrail_firehose_transform"
+## directory in this repository.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Kinesis Firehose to Redshift table"
+
+Parameters:
+
+  KinesisStream:
+    Description:                        "Name of the Kinesis stream containing CloudTrail events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  DatabaseHost:
+    Description:                        "Hostnme of the Redshift database"
+    Type:                               "String"
+
+  DatabasePort:
+    Description:                        "Port number to access the Redshift database"
+    Type:                               "Number"
+    Default:                            5439
+
+  DatabaseName:
+    Description:                        "Name of the Redshift database"
+    Type:                               "String"
+
+  DatabaseSecretArn:
+    Description:                        "The ARN of a Secrets Manager secret that contains database credentials"
+    Type:                               "String"
+
+  TableName:
+    Description:                        "Name of the Redshift table that will hold the events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  FirehoseStagingBucket:
+    Description:                        "An S3 bucket that Firehose will use to stage records for delivery"
+    Type:                               "String"
+
+  FirehoseStagingPrefix:
+    Description:                        "An the prefix that Firehose will use for staging files (will have table name appended)"
+    Type:                               "String"
+    Default:                            "firehose_staging/"
+
+  FirehoseErrorBucket:
+    Description:                        "An S3 bucket that will hold Firehose error reports"
+    Type:                               "String"
+
+  FirehoseErrorPrefix:
+    Description:                        "Prefix (in error bucket) where error records wiill be written; must include trailing slash"
+    Type:                               "String"
+    Default:                            "firehose_errors/"
+
+  FirehoseBatchTime:
+    Description:                        "Number of seconds that Firehose will wait to gather ingested records"
+    Type:                               "Number"
+    MinValue:                           60
+    MaxValue:                           900
+    Default:                            900
+
+  FirehoseBatchSize:
+    Description:                        "Target number of megabytes that Firehose will store in a single file"
+    Type:                               "Number"
+    MinValue:                           1
+    MaxValue:                           128
+    Default:                            64
+
+
+Resources:
+
+  ## Transformation Lambda
+
+  TransformLambdaLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    DeletionPolicy:                     "Delete"
+    Properties:
+      LogGroupName:                     !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays:                  7
+
+
+  TransformLambdaRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      Path:                             "/lambda/"
+      RoleName:                         !Sub "${AWS::StackName}-TransformLambda-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "lambda.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+      Policies:
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "logs:CreateLogStream"
+                -                       "logs:Describe*"
+                -                       "logs:PutLogEvents"
+              Resource:
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}"
+                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${TransformLambdaLogGroup}:*"
+
+
+  TransformLambdaFunction:
+    Type:                               "AWS::Lambda::Function"
+    Properties:
+      FunctionName:                     !Ref AWS::StackName
+      Description:                      !Sub "Transformation Lambda for Firehose ${AWS::StackName}"
+      Role:                             !GetAtt TransformLambdaRole.Arn
+      Runtime:                          "python3.12"
+      Handler:                          "index.lambda_handler"
+      MemorySize:                       1024
+      Timeout:                          60
+      Code:
+        ZipFile:                        |
+                                        """ Dummy transformation; replace with cloudtrail_firehose_transform/index.py
+                                            """
+
+                                        def lambda_handler(event, context):
+                                            raise Exception("replace with actual transformer")
+      Environment:
+        Variables:
+          USE_SNAKE_CASE:               "1"
+          DISCARD_UNKNOWN_FIELDS:       "1"
+
+
+  ## Firehose
+
+  FirehoseLogGroup:
+    Type:                               "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName:                     !Sub "/aws/kinesisfirehose/${AWS::StackName}"
+      RetentionInDays:                  1
+
+
+  # create the log stream explicitly because otherwise Firehose Console shows an error
+  FirehoseDestLogStream:
+    Type:                               "AWS::Logs::LogStream"
+    Properties:
+      LogGroupName:                     !Ref FirehoseLogGroup
+      LogStreamName:                    "Destination_Errors"
+
+
+  FirehoseRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          Effect:                       "Allow"
+          Principal:
+            Service:                    "firehose.amazonaws.com"
+          Action:                       "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              sts:ExternalId:           !Ref AWS::AccountId
+      Policies:
+        - PolicyName:                   "Source"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "kinesis:DescribeStream"
+                -                       "kinesis:GetShardIterator"
+                -                       "kinesis:GetRecords"
+              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
+        - PolicyName:                   "Transform"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "lambda:InvokeFunction"
+                  -                     "lambda:GetFunctionConfiguration"
+                Resource:
+                  -                     !Sub "${TransformLambdaFunction.Arn}"
+                  -                     !Sub "${TransformLambdaFunction.Arn}:*"
+        - PolicyName:                   "Staging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseStagingBucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseStagingBucket}/${FirehoseStagingPrefix}${TableName}/*"
+        - PolicyName:                   "Destination"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "secretsmanager:GetSecretValue"
+                Resource:               !Ref DatabaseSecretArn
+        - PolicyName:                   "Logging"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "logs:Describe*"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}${TableName}/*"
+
+
+  Firehose:
+    Type:                               "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName:               !Ref AWS::StackName
+      DeliveryStreamType:               "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+      RedshiftDestinationConfiguration:
+        RoleARN:                        !GetAtt FirehoseRole.Arn
+        SecretsManagerConfiguration: 
+          Enabled:                      true
+          RoleARN:                      !GetAtt FirehoseRole.Arn
+          SecretARN:                    !Ref DatabaseSecretArn
+        ClusterJDBCURL:                 !Sub "jdbc:redshift://${DatabaseHost}:${DatabasePort}/${DatabaseName}"
+        CopyCommand: 
+          DataTableName:                !Ref TableName
+          CopyOptions:                  "JSON 'auto' DATEFORMAT 'auto' TIMEFORMAT 'auto'"
+        ProcessingConfiguration: 
+          Enabled:                      true
+          Processors: 
+            - Type:                     "Lambda"
+              Parameters:
+                - ParameterName:        "LambdaArn"
+                  ParameterValue:       !GetAtt TransformLambdaFunction.Arn
+                - ParameterName:        "RoleArn"
+                  ParameterValue:       !GetAtt FirehoseRole.Arn
+                - ParameterName:        "BufferSizeInMBs" 
+                  ParameterValue:       1
+                - ParameterName:        "BufferIntervalInSeconds" 
+                  ParameterValue:       60
+        S3Configuration: 
+          BucketARN:                    !Sub "arn:aws:s3:::${FirehoseStagingBucket}"
+          Prefix:                       !Sub "${FirehoseStagingPrefix}${TableName}/"
+          RoleARN:                      !GetAtt FirehoseRole.Arn
+          CompressionFormat:            "UNCOMPRESSED"
+          BufferingHints:
+            IntervalInSeconds:          !Ref FirehoseBatchTime
+            SizeInMBs:                  !Ref FirehoseBatchSize
+          CloudWatchLoggingOptions:
+            Enabled:                    true
+            LogGroupName:               !Ref FirehoseLogGroup
+            LogStreamName:              !Ref FirehoseDestLogStream
+        CloudWatchLoggingOptions:
+          Enabled:                      true
+          LogGroupName:                 !Ref FirehoseLogGroup
+          LogStreamName:                !Ref FirehoseDestLogStream
