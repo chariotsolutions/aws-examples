@@ -156,6 +156,7 @@ Resources:
         Variables:
           USE_SNAKE_CASE:               "1"
           DISCARD_UNKNOWN_FIELDS:       "1"
+          TRUNCATE_STRINGIFIED_FIELDS:  "65534"
 
 
   ## Firehose

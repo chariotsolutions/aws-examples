@@ -36,6 +36,7 @@ import index
 
 ENV_USE_SNAKE_CASE = "USE_SNAKE_CASE"
 ENV_DISCARD_UNKNOWN_FIELDS = "DISCARD_UNKNOWN_FIELDS"
+ENV_TRUNCATE_STRINGIFIED_FIELDS = "TRUNCATE_STRINGIFIED_FIELDS"
 
 
 def default_cloudtrail_event():
@@ -107,6 +108,18 @@ def construct_source(messages):
     return result
 
 
+def setup_env(snake_case=None, discard_unknown=None, truncate_stringified=None):
+    os.environ.pop(ENV_USE_SNAKE_CASE, None)
+    os.environ.pop(ENV_DISCARD_UNKNOWN_FIELDS, None)
+    os.environ.pop(ENV_TRUNCATE_STRINGIFIED_FIELDS, None)
+    if snake_case:
+        os.environ[ENV_USE_SNAKE_CASE] = snake_case
+    if discard_unknown:
+        os.environ[ENV_DISCARD_UNKNOWN_FIELDS] = discard_unknown
+    if truncate_stringified:
+        os.environ[ENV_TRUNCATE_STRINGIFIED_FIELDS] = truncate_stringified
+
+
 class TestTransformationLambda(unittest.TestCase):
 
     def assert_record_ids(self, source_recs, result_recs):
@@ -120,8 +133,7 @@ class TestTransformationLambda(unittest.TestCase):
 
 
     def test_default_operation(self):
-        os.environ.pop(ENV_USE_SNAKE_CASE, None)
-        os.environ.pop(ENV_DISCARD_UNKNOWN_FIELDS, None)
+        setup_env()
         processor = index.Processor()
         source = construct_source([default_cloudtrail_event()])
         result = processor.process(source)
@@ -136,8 +148,7 @@ class TestTransformationLambda(unittest.TestCase):
 
 
     def test_use_snake_case(self):
-        os.environ[ENV_USE_SNAKE_CASE] = "1"
-        os.environ.pop(ENV_DISCARD_UNKNOWN_FIELDS, None)
+        setup_env(snake_case="1")
         processor = index.Processor()
         source = construct_source([default_cloudtrail_event()])
         result = processor.process(source)
@@ -152,8 +163,7 @@ class TestTransformationLambda(unittest.TestCase):
 
 
     def test_discard_unknown_fields(self):
-        os.environ.pop(ENV_USE_SNAKE_CASE, None)
-        os.environ[ENV_DISCARD_UNKNOWN_FIELDS] = "1"
+        setup_env(discard_unknown="1")
         processor = index.Processor()
         source = construct_source([{"eventID": "known", "argleBargle": "unknown"}])
         result = processor.process(source)
@@ -162,8 +172,7 @@ class TestTransformationLambda(unittest.TestCase):
 
 
     def test_retain_unknown_fields(self):
-        os.environ.pop(ENV_USE_SNAKE_CASE, None)
-        os.environ.pop(ENV_DISCARD_UNKNOWN_FIELDS, None)
+        setup_env(discard_unknown=None)
         processor = index.Processor()
         source = construct_source([{"eventID": "known", "argleBargle": "unknown"}])
         result = processor.process(source)
@@ -172,13 +181,30 @@ class TestTransformationLambda(unittest.TestCase):
 
 
     def test_retain_unknown_fields_and_convert_to_snake_case(self):
-        os.environ[ENV_USE_SNAKE_CASE] = "1"
-        os.environ.pop(ENV_DISCARD_UNKNOWN_FIELDS, None)
+        setup_env(snake_case="1")
         processor = index.Processor()
         source = construct_source([{"eventID": "known", "argleBargle": "unknown"}])
         result = processor.process(source)
         result_rec = decode_message(result[0]['data'])
         self.assertEqual({"event_id": "known", "argle_bargle": "unknown"}, result_rec)
+
+
+    def test_truncate_stringified_fields(self):
+        setup_env(truncate_stringified="100")
+        processor = index.Processor()
+        source = construct_source([{"requestParameters": "x" * 200}])
+        result = processor.process(source)
+        result_rec = decode_message(result[0]['data'])
+        self.assertEqual(100, len(result_rec["requestParameters"]), "length of stringified field (truncated)")
+
+
+    def test_dont_truncate_stringified_fields(self):
+        setup_env(truncate_stringified=None)
+        processor = index.Processor()
+        source = construct_source([{"requestParameters": "x" * 200}])
+        result = processor.process(source)
+        result_rec = decode_message(result[0]['data'])
+        self.assertEqual(202, len(result_rec["requestParameters"]), "length of stringified field (including quotes)")
 
 
 if __name__ == '__main__':

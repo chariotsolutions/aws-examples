@@ -44,6 +44,7 @@ from dataclasses import dataclass
 
 ENV_USE_SNAKE_CASE = "USE_SNAKE_CASE"
 ENV_DISCARD_UNKNOWN_FIELDS = "DISCARD_UNKNOWN_FIELDS"
+ENV_TRUNCATE_STRINGIFIED_FIELDS = "TRUNCATE_STRINGIFIED_FIELDS"
 
 CAMEL_CASE_MATCHER = re.compile(r'(?<=[a-z0-9])([A-Z]+)')
 
@@ -102,6 +103,9 @@ class Processor:
         # instantiation to make testing easier
         self._use_snake_case = os.environ.get(ENV_USE_SNAKE_CASE, "0") == "1"
         self._discard_unknown_fields = os.environ.get(ENV_DISCARD_UNKNOWN_FIELDS, "0") == "1"
+        self._truncate_stringified_fields = None
+        if os.environ.get(ENV_TRUNCATE_STRINGIFIED_FIELDS):
+            self._truncate_stringified_fields = int(os.environ.get(ENV_TRUNCATE_STRINGIFIED_FIELDS))
 
 
     def process(self, src_recs):
@@ -152,12 +156,16 @@ class Processor:
                     key = xform.dst_name
                 if xform.stringify:
                     val = json.dumps(val)
+                    if self._truncate_stringified_fields:
+                        val = val[:self._truncate_stringified_fields]
                 result[key] = val
             elif not self._discard_unknown_fields:
                 if self._use_snake_case:
                     key = CAMEL_CASE_MATCHER.sub(r'_\1', key).lower()
                 if val is not None and not isinstance(val, (str,int,float,bool)):
                     val = json.dumps(val)
+                    if self._truncate_stringified_fields:
+                        val = val[:self._truncate_stringified_fields]
                 result[key] = val
         reformatted = (json.dumps(result) + "\n")
         return reformatted.encode()
