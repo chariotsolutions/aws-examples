@@ -161,3 +161,7 @@ Notes:
 
 * Firehose does not remove files from the staging bucket once they've been successfully
   uploaded. You will need to manually remove them or use them as an archive.
+
+* This directory contains a CloudFormation template ([redshift.yml](redshift.yml) that
+  will create a Redshift serverless workgroup. See the template for documentation of its
+  parameters.
