@@ -19,52 +19,48 @@
 #
 ################################################################################
 
+""" Extracts records from a CloudTrail log file and writes them to the destination
+    stream as stringified JSON. The file may live on either S3 or the local filesystem.
+
+    A single instance can be called with multiple files, and will attempt to batch
+    records from the file. Once all files have been processed, call flush() on the
+    KinesisWriter.
+    """
+
 import boto3
 import gzip
 import json
 import logging
 import time
 
-from kinesis_writer import KinesisWriter 
-
 
 logger = logging.getLogger(__name__)
 
+
 class FileProcessor:
 
-    FIELDS_TO_STRINGIFY = [
-        "additionalEventData", "addendum", "edgeDeviceDetails", "insightDetails", 
-        "requestParameters", "responseElements", "resources", "serviceEventDetails", 
-        "tlsDetails", "userIdentity"
-    ]
+    def __init__(self, s3_client=None, kinesis_writer=None):
+        self._s3_client = s3_client
+        self._kinesis_writer = kinesis_writer
 
 
-    def __init__(self, s3_client=None, kinesis_client=None):
-        self.s3_client = s3_client
-        self.kinesis_client = kinesis_client
+    def process(self, s3_bucket=None, s3_key=None, file=None):
+        recs = self._extract_records(s3_bucket=s3_bucket, s3_key=s3_key, file=file)
+        for rec in recs:
+            self._kinesis_writer.enqueue(json.dumps(rec), rec.get('eventID'))    
+        logger.info(f"queued {len(recs)} records")
 
 
-    def extract_records(self, s3_bucket=None, s3_key=None, data=None):
-        if not data:
-            s3_result = self.s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
+    def _extract_records(self, s3_bucket=None, s3_key=None, file=None):
+        if not file:
+            logger.info(f"reading from s3://{s3_bucket}/{s3_key}")
+            s3_result = self._s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
             data = s3_result['Body'].read()
+        else:
+            logger.info(f"reading from {file}")
+            with open(file, "rb") as f:
+                data = f.read()
         if data.startswith(b'\x1f\x8b'):
              data = gzip.decompress(data)
         event = json.loads(data)
-        records = event['Records']
-        for rec in records:
-            for field_name in FileProcessor.FIELDS_TO_STRINGIFY:
-                field_value = rec.get(field_name)
-                if field_value:
-                    rec[field_name] = json.dumps(field_value)
-        return records
-
-
-    def process(self, s3_bucket=None, s3_key=None, data=None, stream_name=None):
-        writer = KinesisWriter(self.kinesis_client, stream_name)
-        recs = self.extract_records(s3_bucket=s3_bucket, s3_key=s3_key, data=data)
-        for rec in recs:
-            writer.enqueue(json.dumps(rec), rec.get('eventID'))    
-        while writer.flush():
-            time.sleep(0.25)
-        logger.info(f"wrote {len(recs)} records")
+        return event['Records']

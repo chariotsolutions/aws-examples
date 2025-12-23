@@ -1,8 +1,13 @@
 ##
-## Creates a Kinesis Firehose that accepts CloudTrail events from Kinesis and writes them
-## to an Iceberg table on S3, along with the Glue table used to access this data.
+## Creates a Kinesis Firehose that accepts CloudTrail events from Kinesis and
+## writes them to an Iceberg table on S3. Also creates the Glue table definition.
 ##
-## The Firehose and related resources will be naamed after the stack.
+## The Firehose and related resources are naamed after the stack.
+##
+## This Firehose uses a transformation Lambda to convert the raw event data to
+## match the table definition. This template creates a "dummy" Lambda that you
+## must then mandually update with source code from the "cloudtrail_firehose_transform"
+## directory in this repository.
 ##
 ################################################################################
 #
@@ -30,42 +35,47 @@ Description:                            "Kinesis Firehose to Iceberg table"
 
 Parameters:
 
-  KinesisStreamName:
+  KinesisStream:
     Description:                        "Name of the Kinesis stream containing CloudTrail events"
     Type:                               "String"
     Default:                            "cloudtrail_events"
 
-  S3Bucket:
-    Description:                        "The bucket where data files will be written"
-    Type:                               "String"
-
-  GlueDatabaseName:
+  GlueDatabase:
     Description:                        "Name of the Glue database to holds the table defined by this template"
     Type:                               "String"
     Default:                            "default"
 
-  GlueTableName:
-    Description:                        "Name of the Glue table that will represent these events (also the prefix for data storage)"
+  TableName:
+    Description:                        "Name of the Glue table that provides access to these events (also the prefix for data storage)"
     Type:                               "String"
+    Default:                            "cloudtrail_iceberg"
 
-  GluePrimaryKey:
+  PrimaryKey:
     Description:                        "Name of the primary key field"
     Type:                               "String"
-    Default:                            "eventid"
+    Default:                            "event_id"
+
+  TableBucket:
+    Description:                        "The bucket where data files will be written"
+    Type:                               "String"
+
+  FirehoseErrorBucket:
+    Description:                        "An S3 bucket tht will hold Firehose error reports"
+    Type:                               "String"
 
   FirehoseErrorPrefix:
     Description:                        "Prefix (in destination bucket) where error records wiill be written; must include trailing slash"
     Type:                               "String"
     Default:                            "firehose_errors/"
 
-  FirehoseBufferingInterval:
+  FirehoseBatchTime:
     Description:                        "Number of seconds that Firehose will wait to gather ingested records"
     Type:                               "Number"
     MinValue:                           60
     MaxValue:                           900
     Default:                            120
 
-  FirehoseFilesizeMB:
+  FirehoseBatchSize:
     Description:                        "Target number of megabytes that Firehose will store in a single file"
     Type:                               "Number"
     MinValue:                           1
@@ -75,61 +85,77 @@ Parameters:
 
 Resources:
 
-  ## Glue
+  ## Table Definition
 
   GlueTable:
     Type:                               "AWS::Glue::Table"
     Properties: 
       CatalogId:                        !Ref AWS::AccountId
-      DatabaseName:                     !Ref GlueDatabaseName
+      DatabaseName:                     !Ref GlueDatabase
       OpenTableFormatInput:
         IcebergInput:
           MetadataOperation:            "CREATE"
       TableInput: 
-        Name:                           !Ref GlueTableName
+        Name:                           !Ref TableName
         Description:                    "CloudTrail events with stringified nested objects"
         TableType:                      "EXTERNAL_TABLE"
         StorageDescriptor: 
-          Location:                     !Sub "s3://${S3Bucket}/${GlueTableName}/"
+          Location:                     !Sub "s3://${TableBucket}/${TableName}/"
           Compressed:                   false
           Columns: 
-            - Name:                     "awsregion"
+            - Name:                     "event_id"
               Type:                     "string"
-            - Name:                     "eventcategory"
-              Type:                     "string"
-            - Name:                     "eventid"
-              Type:                     "string"
-            - Name:                     "eventname"
-              Type:                     "string"
-            - Name:                     "eventsource"
-              Type:                     "string"
-            - Name:                     "eventtime"
+            - Name:                     "event_time"
               Type:                     "timestamp"
-            - Name:                     "eventtype"
+            - Name:                     "event_name"
               Type:                     "string"
-            - Name:                     "eventversion"
+            - Name:                     "event_category"
               Type:                     "string"
-            - Name:                     "managementevent"
+            - Name:                     "event_type"
+              Type:                     "string"
+            - Name:                     "event_version"
+              Type:                     "string"
+            - Name:                     "aws_region"
+              Type:                     "string"
+            - Name:                     "event_source"
+              Type:                     "string"
+            - Name:                     "management_event"
               Type:                     "boolean"
-            - Name:                     "readonly"
+            - Name:                     "read_only"
               Type:                     "boolean"
-            - Name:                     "recipientaccountid"
+            - Name:                     "api_version"
               Type:                     "string"
-            - Name:                     "requestid"
+            - Name:                     "recipient_account_id"
               Type:                     "string"
-            - Name:                     "requestparameters"
+            - Name:                     "source_ip_address"
+              Type:                     "string"
+            - Name:                     "request_id"
+              Type:                     "string"
+            - Name:                     "shared_event_id"
+              Type:                     "string"
+            - Name:                     "request_parameters"
+              Type:                     "string"
+            - Name:                     "response_elements"
               Type:                     "string"
             - Name:                     "resources"
               Type:                     "string"
-            - Name:                     "responseelements"
+            - Name:                     "additional_event_data"
               Type:                     "string"
-            - Name:                     "sharedeventid"
+            - Name:                     "service_event_details"
               Type:                     "string"
-            - Name:                     "sourceipaddress"
+            - Name:                     "user_agent"
               Type:                     "string"
-            - Name:                     "useragent"
+            - Name:                     "user_identity"
               Type:                     "string"
-            - Name:                     "useridentity"
+            - Name:                     "tls_details"
+              Type:                     "string"
+            - Name:                     "vpc_endpoint_id"
+              Type:                     "string"
+            - Name:                     "vpc_endpoint_account_-d"
+              Type:                     "string"
+            - Name:                     "error_code"
+              Type:                     "string"
+            - Name:                     "error_message"
               Type:                     "string"
 
 
@@ -167,20 +193,20 @@ Resources:
               -                         "glue:UpdateTable"
             Resource:
               -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
-              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/${GlueTableName}"
+              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+              -                         !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/${TableName}"
           - Effect:                     "Allow"
             Action:
               -                         "s3:ListBucket"
             Resource:
-              -                         !Sub "arn:aws:s3:::${S3Bucket}"
+              -                         !Sub "arn:aws:s3:::${TableBucket}"
           - Effect:                     "Allow"
             Action:
               -                         "s3:GetObject"
               -                         "s3:DeleteObject"
               -                         "s3:PutObject"
             Resource:
-              -                         !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
+              -                         !Sub "arn:aws:s3:::${TableBucket}/${TableName}/*"
           - Effect:                     "Allow"
             Action:
               -                         "logs:CreateLogGroup"
@@ -240,54 +266,15 @@ Resources:
       Timeout:                          60
       Code:
         ZipFile:                        |
-                                        """ Lowercases all top-level fieldnames in the passed record, to make them
-                                            match the Glue table definition.
+                                        """ Dummy transformation; replace with cloudtrail_firehose_transform/index.py
                                             """
 
-                                        import base64
-                                        import io
-                                        import json
-                                        import logging
-
-
-                                        LOGGER = logging.getLogger(__name__)
-                                        LOGGER.setLevel(logging.INFO)
-
-
                                         def lambda_handler(event, context):
-                                            result = [process(rec) for rec in event['records']]
-                                            LOGGER.info(f"processed {len(result)} records")
-                                            return {"records": result}
-
-
-                                        def process(rec):
-                                            """ Handle a single JSON record, decompressing it if needed.
-                                                """
-                                            record_id = rec['recordId']
-                                            data = None
-                                            try:
-                                                data = base64.b64decode(rec['data'])
-                                                transformed = transform(data)
-                                                encoded = base64.b64encode(transformed)
-                                                return {
-                                                    'recordId': record_id,
-                                                    'result': 'Ok',
-                                                    'data': str(encoded, "utf-8")
-                                                }
-                                            except Exception as ex:
-                                                LOGGER.warn(f"exception processing record; data = {data}", exc_info=True)
-                                                return {
-                                                    'recordId': record_id,
-                                                    'result': 'ProcessingFailed'
-                                                }
-
-
-                                        def transform(rec:bytes) -> bytes: 
-                                            parsed = json.load(io.BytesIO(rec))
-                                            transformed = dict([k.lower(), v] for k,v in parsed.items())
-                                            stringified = json.dumps(transformed)
-                                            return bytes(stringified, "utf-8")
-
+                                            raise Exception("replace with actual transformer")
+      Environment:
+        Variables:
+          USE_SNAKE_CASE:               "1"
+          DISCARD_UNKNOWN_FIELDS:       "1"
 
 
   ## Firehose
@@ -300,7 +287,7 @@ Resources:
 
 
   # create the log stream explicitly because otherwise Firehose Console shows an error
-  FirehoseS3LogStream:
+  FirehoseDestLogStream:
     Type:                               "AWS::Logs::LogStream"
     Properties:
       LogGroupName:                     !Ref FirehoseLogGroup
@@ -331,7 +318,7 @@ Resources:
                 -                       "kinesis:DescribeStream"
                 -                       "kinesis:GetShardIterator"
                 -                       "kinesis:GetRecords"
-              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+              Resource:                 !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
         - PolicyName:                   "Transform"
           PolicyDocument:
             Version:                    "2012-10-17"
@@ -353,15 +340,14 @@ Resources:
                   -                     "s3:ListBucket"
                   -                     "s3:ListBucketMultipartUploads"
                 Resource:
-                  -                     !Sub "arn:aws:s3:::${S3Bucket}"
+                  -                     !Sub "arn:aws:s3:::${TableBucket}"
               - Effect:                 "Allow"
                 Action:
                   -                     "s3:AbortMultipartUpload"
                   -                     "s3:GetObject"
                   -                     "s3:PutObject"
                 Resource:
-                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${GlueTableName}/*"
-                  -                     !Sub "arn:aws:s3:::${S3Bucket}/${FirehoseErrorPrefix}${GlueTableName}/*"
+                  -                     !Sub "arn:aws:s3:::${TableBucket}/${TableName}/*"
         - PolicyName:                   "GlueCatalog"
           PolicyDocument:
             Version:                    "2012-10-17"
@@ -375,19 +361,33 @@ Resources:
                 -                       "glue:UpdateTable"
               Resource:
                 -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabaseName}"
-                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabaseName}/${GlueTableName}"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/${TableName}"
         - PolicyName:                   "Logging"
           PolicyDocument:
             Version:                    "2012-10-17"
             Statement:
-              Effect:                   "Allow"
-              Action:
-                -                       "logs:Describe*"
-                -                       "logs:PutLogEvents"
-              Resource:
-                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
-                -                       !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "logs:Describe*"
+                  -                     "logs:PutLogEvents"
+                Resource:
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}"
+                  -                     !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${FirehoseLogGroup}:*"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:GetBucketLocation"
+                  -                     "s3:ListBucket"
+                  -                     "s3:ListBucketMultipartUploads"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${FirehoseErrorBucket}/${FirehoseErrorPrefix}${TableName}/*"
 
 
   Firehose:
@@ -396,16 +396,16 @@ Resources:
       DeliveryStreamName:               !Ref AWS::StackName
       DeliveryStreamType:               "KinesisStreamAsSource"
       KinesisStreamSourceConfiguration:
-        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStreamName}"
+        KinesisStreamARN:               !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KinesisStream}"
         RoleARN:                        !GetAtt FirehoseRole.Arn
       IcebergDestinationConfiguration:
         RoleARN:                        !GetAtt FirehoseRole.Arn
         CatalogConfiguration:
           CatalogArn:                   !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
         DestinationTableConfigurationList: 
-          - DestinationDatabaseName:    !Ref GlueDatabaseName
-            DestinationTableName:       !Ref GlueTableName
-            UniqueKeys:                 [ !Ref GluePrimaryKey ]
+          - DestinationDatabaseName:    !Ref GlueDatabase
+            DestinationTableName:       !Ref TableName
+            UniqueKeys:                 [ !Ref PrimaryKey ]
         ProcessingConfiguration: 
           Enabled:                      true
           Processors: 
@@ -422,21 +422,21 @@ Resources:
             - Type:                     "MetadataExtraction"
               Parameters:
                 - ParameterName:        "MetadataExtractionQuery" 
-                  ParameterValue:       !Sub "{destinationDatabaseName:\"${GlueDatabaseName}\",destinationTableName:\"${GlueTableName}\",operation:\"update\"}"
+                  ParameterValue:       !Sub "{destinationDatabaseName:\"${GlueDatabase}\",destinationTableName:\"${TableName}\",operation:\"update\"}"
                 - ParameterName:        "JsonParsingEngine" 
                   ParameterValue:       "JQ-1.6"  # copied from manually-creaed Firehose description
         CloudWatchLoggingOptions:
           Enabled:                      true
           LogGroupName:                 !Ref FirehoseLogGroup
-          LogStreamName:                !Ref FirehoseS3LogStream
+          LogStreamName:                !Ref FirehoseDestLogStream
         S3Configuration: 
           RoleARN:                      !GetAtt FirehoseRole.Arn
-          BucketARN:                    !Sub "arn:aws:s3:::${S3Bucket}"
+          BucketARN:                    !Sub "arn:aws:s3:::${TableBucket}"
           BufferingHints:
-            IntervalInSeconds:          !Ref FirehoseBufferingInterval
-            SizeInMBs:                  !Ref FirehoseFilesizeMB
+            IntervalInSeconds:          !Ref FirehoseBatchTime
+            SizeInMBs:                  !Ref FirehoseBatchSize
           CompressionFormat:            "UNCOMPRESSED"
-          ErrorOutputPrefix:            !Sub "${FirehoseErrorPrefix}${GlueTableName}/"
+          ErrorOutputPrefix:            !Sub "${FirehoseErrorPrefix}${TableName}/"
 
 Outputs:
 
