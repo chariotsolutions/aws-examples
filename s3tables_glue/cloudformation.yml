@@ -1,0 +1,185 @@
+##
+## CloudFormation template to create Glue job that works with S3 tables. Before
+## deploying this template, you must upload the job's script to S3.
+##
+## The job, and any associated resources, are named after the stack.
+##
+################################################################################
+#
+# MIT No Attribution
+#
+# Copyright Chariot Solutions
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+################################################################################
+
+
+AWSTemplateFormatVersion:               "2010-09-09"
+Description:                            "Glue Job that queries S3 Table and creates standard Glue table from results"
+
+Parameters:
+
+  ScriptBucket:
+    Description:                        "Name of the S3 bucket where the Glue script lives"
+    Type:                               "String"
+
+  ScriptKey:
+    Description:                        "Key used to access Glue script"
+    Type:                               "String"
+    Default:                            "s3tables_glue.py"
+
+  SourceTableBucket:
+    Description:                        "Name of the S3 Table Bucket where data is stored"
+    Type:                               "String"
+    Default:                            "examle"
+
+  SourceNamespace:
+    Description:                        "Namespace within Table Bucket where tables are stored"
+    Type:                               "String"
+    Default:                            "default"
+
+  SourceTable:
+    Description:                        "Name of the table containing CloudTrail events"
+    Type:                               "String"
+    Default:                            "cloudtrail_events"
+
+  TargetBucket:
+    Description:                        "Standard S3 bucket that will hold created table"
+    Type:                               "String"
+
+  TargetPrefix:
+    Description:                        "Optional prefix for storing destination tables; if omitted, data is in folder at root named after table; if used, must include trailing slash"
+    Type:                               "String"
+    Default:                            ""
+
+  TargetTable:
+    Description:                        "Name of the destination table"
+    Type:                               "String"
+    Default:                            "event_counts"
+
+  GlueDPU:
+    Description:                        "Number of Glue Data Processing Units to use for this job (min 2)"
+    Type:                               "Number"
+    Default:                            2
+
+
+Resources:
+
+  GlueExecutionRole:
+    Type:                               "AWS::IAM::Role"
+    Properties:
+      RoleName:                         !Sub "${AWS::StackName}-GlueExecutionRole-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version:                        "2012-10-17"
+        Statement:
+          - Effect:                     "Allow"
+            Principal:                  { Service: ["glue.amazonaws.com"] }
+            Action:                     [ "sts:AssumeRole" ]
+      Policies:
+        - PolicyName:                   "ReadScript"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:                   "s3:GetObject"
+              Resource:                 !Sub "arn:aws:s3:::${ScriptBucket}/${ScriptKey}"
+        - PolicyName:                   "GlueCatalog"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "glue:GetTable"
+                -                       "glue:GetDatabase"
+                -                       "glue:CreateTable"
+                -                       "glue:UpdateTable"
+              Resource:
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${SourceTableBucket}"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog/s3tablescatalog/${SourceTableBucket}/*"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/*"
+                -                       !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/*"
+        - PolicyName:                   "LakeFormation"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              Effect:                   "Allow"
+              Action:
+                -                       "lakeformation:GetDataAccess"
+              Resource:                 "*"
+        - PolicyName:                   "S3"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:List*"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${TargetBucket}"
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3:AbortMultipartUpload"
+                  -                     "s3:DeleteObject"
+                  -                     "s3:GetObject"
+                  -                     "s3:PutObject"
+                Resource:
+                  -                     !Sub "arn:aws:s3:::${TargetBucket}/${TargetPrefix}*"
+        - PolicyName:                   "S3Tables"
+          PolicyDocument:
+            Version:                    "2012-10-17"
+            Statement:
+              - Effect:                 "Allow"
+                Action:
+                  -                     "s3tables:GetTableBucket"
+                  -                     "s3tables:GetNamespace"
+                  -                     "s3tables:CreateTable"
+                  -                     "s3tables:DeleteTable"
+                  -                     "s3tables:RenameTable"
+                Resource:
+                  -                     !Sub "arn:aws:s3tables:${AWS::Region}:${AWS::AccountId}:bucket/${SourceTableBucket}"
+              - Effect:                 "Allow"
+                Action:
+                -                       "s3tables:GetTable"
+                -                       "s3tables:GetTableData"
+                -                       "s3tables:PutTableData"
+                Resource:
+                -                       !Sub "arn:aws:s3tables:${AWS::Region}:${AWS::AccountId}:bucket/${SourceTableBucket}/table/*"
+
+
+  Job:
+    Type:                               "AWS::Glue::Job"
+    Properties: 
+      Name:                             !Ref AWS::StackName
+      Description:                      "Example of accessing S3 Table Bucket data from Glue"
+      Role:                             !Ref GlueExecutionRole
+      GlueVersion:                      "5.0"
+      Command: 
+        Name:                           "glueetl"
+        PythonVersion:                  "3"
+        ScriptLocation:                 !Sub "s3://${ScriptBucket}/${ScriptKey}"
+      DefaultArguments: 
+        "--enable-glue-datacatalog":    "true"
+        "--AWS_ACCOUNT_ID":             !Ref AWS::AccountId
+        "--SOURCE_TABLE_BUCKET":        !Ref SourceTableBucket
+        "--SOURCE_NAMESPACE":           !Ref SourceNamespace
+        "--SOURCE_TABLE":               !Ref SourceTable
+        "--TARGET_TABLE":               !Ref TargetTable
+        "--TARGET_S3_URL":              !Sub "s3a://${TargetBucket}/${TargetPrefix}${TargetTable}/"
+      MaxCapacity:                      !Ref GlueDPU 
+      ExecutionProperty: 
+        MaxConcurrentRuns:              1
+      MaxRetries:                       0
+      Timeout:                          30
