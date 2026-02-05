@@ -18,11 +18,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <aws.sdk.version>2.25.31</aws.sdk.version>
-        <aws.lambda.java-core.version>1.2.3</aws.lambda.java-core.version>
-        <aws.lambda.java-events.version>3.11.5</aws.lambda.java-events.version>
-        <logback.version>1.2.13</logback.version>
-        <slf4j.version>1.7.25</slf4j.version>
+        <aws.sdk.version>2.41.22</aws.sdk.version>
+        <aws.lambda.java-core.version>1.4.0</aws.lambda.java-core.version>
+        <aws.lambda.java-events.version>3.16.1</aws.lambda.java-events.version>
+        <logback.version>1.5.27</logback.version>
         
         <plugin.assembly.version>3.2.0</plugin.assembly.version>
         <plugin.compiler.version>3.1</plugin.compiler.version>
@@ -64,16 +63,13 @@
             <version>${aws.lambda.java-events.version}</version>
         </dependency>
 
+<!--
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>${logback.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jcl-over-slf4j</artifactId>
-            <version>${slf4j.version}</version>
-        </dependency>
+-->
 
     </dependencies>
 
@@ -85,8 +81,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${plugin.compiler.version}</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
                     <debug>true</debug>
                 </configuration>
             </plugin>
