@@ -1,0 +1,5 @@
+# Python
+__pycache__/
+
+# JavaScript
+package-lock.json
